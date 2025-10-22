@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from "axios";
 import type {
   CarInfo,
@@ -101,10 +102,12 @@ export const mapsService = {
   initializeMap: (elementId: string, options: any) => {
     return new Promise((resolve, reject) => {
       if (window.google && window.google.maps) {
-        const map = new window.google.maps.Map(
-          document.getElementById(elementId),
-          options
-        );
+        const element = document.getElementById(elementId);
+        if (!element) {
+          reject(new Error(`Element with id "${elementId}" not found`));
+          return;
+        }
+        const map = new window.google.maps.Map(element, options);
         resolve(map);
       } else {
         reject(new Error("Google Maps not loaded"));
@@ -161,10 +164,7 @@ export const mapsService = {
       return new Promise((resolve, reject) => {
         geocoder.geocode(
           { address },
-          (
-            results: google.maps.GeocoderResult[] | null,
-            status: google.maps.GeocoderStatus
-          ) => {
+          (results: any[] | null, status: string) => {
             if (status === "OK" && results && results[0]) {
               const location = results[0].geometry.location;
               resolve({
@@ -173,7 +173,7 @@ export const mapsService = {
                 address: results[0].formatted_address,
               });
             } else {
-              reject(new Error("Geocoding failed"));
+              reject(new Error(`Geocoding failed: ${status}`));
             }
           }
         );

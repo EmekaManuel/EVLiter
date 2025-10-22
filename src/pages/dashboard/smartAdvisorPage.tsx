@@ -1,12 +1,4 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -34,7 +26,7 @@ import {
   DollarSign,
   Info,
   MapPin,
-  TrendingUp,
+  Star,
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -50,6 +42,34 @@ const preferencesSchema = z.object({
 });
 
 type PreferencesFormData = z.infer<typeof preferencesSchema>;
+
+const DISTANCE_OPTIONS = [
+  { value: "5", label: "5 miles" },
+  { value: "10", label: "10 miles" },
+  { value: "25", label: "25 miles" },
+  { value: "50", label: "50 miles" },
+  { value: "100", label: "100 miles" },
+];
+
+const FACTOR_ICONS = {
+  cost: DollarSign,
+  time: Clock,
+  distance: MapPin,
+  availability: Battery,
+  amenities: CheckCircle,
+} as const;
+
+const FACTOR_COLORS = {
+  positive: "text-green-600",
+  negative: "text-red-600",
+  neutral: "text-gray-600",
+} as const;
+
+const PRIORITY_COLORS = {
+  high: "bg-green-50 text-green-800 border-green-200",
+  medium: "bg-yellow-50 text-yellow-800 border-yellow-200",
+  low: "bg-gray-50 text-gray-800 border-gray-200",
+} as const;
 
 export default function SmartAdvisorPage() {
   const [carInfo, setCarInfo] = useState<CarInfo | null>(null);
@@ -75,7 +95,6 @@ export default function SmartAdvisorPage() {
 
   useEffect(() => {
     initializeLocation();
-    // Load saved car info from localStorage or context
     const savedCarInfo = localStorage.getItem("carInfo");
     if (savedCarInfo) {
       setCarInfo(JSON.parse(savedCarInfo));
@@ -86,7 +105,7 @@ export default function SmartAdvisorPage() {
     try {
       const location = await mapsService.getCurrentLocation();
       setUserLocation(location);
-    } catch (err) {
+    } catch {
       setError("Failed to get your location");
     }
   };
@@ -119,7 +138,7 @@ export default function SmartAdvisorPage() {
       } else {
         setError(response.message || "Failed to get recommendations");
       }
-    } catch (err) {
+    } catch {
       setError("Failed to get charging recommendations");
     } finally {
       setLoading(false);
@@ -127,184 +146,257 @@ export default function SmartAdvisorPage() {
   };
 
   const getFactorIcon = (type: RecommendationFactor["type"]) => {
-    switch (type) {
-      case "cost":
-        return <DollarSign className="h-4 w-4" />;
-      case "time":
-        return <Clock className="h-4 w-4" />;
-      case "distance":
-        return <MapPin className="h-4 w-4" />;
-      case "availability":
-        return <Battery className="h-4 w-4" />;
-      case "amenities":
-        return <CheckCircle className="h-4 w-4" />;
-      default:
-        return <Info className="h-4 w-4" />;
-    }
+    const IconComponent = FACTOR_ICONS[type] || Info;
+    return <IconComponent className="h-4 w-4" />;
   };
 
   const getFactorColor = (impact: RecommendationFactor["impact"]) => {
-    switch (impact) {
-      case "positive":
-        return "text-green-600";
-      case "negative":
-        return "text-red-600";
-      case "neutral":
-        return "text-gray-600";
-      default:
-        return "text-gray-600";
-    }
+    return FACTOR_COLORS[impact] || FACTOR_COLORS.neutral;
   };
 
   const getPriorityColor = (priority: ChargingRecommendation["priority"]) => {
-    switch (priority) {
-      case "high":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "medium":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "low":
-        return "bg-gray-100 text-gray-800 border-gray-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
+    return PRIORITY_COLORS[priority] || PRIORITY_COLORS.low;
   };
 
+  const renderSelectField = (
+    label: string,
+    options: Array<{ value: string; label: string }>,
+    onValueChange: (value: string) => void,
+    placeholder: string
+  ) => (
+    <div className="relative">
+      <Label className="text-sm font-medium text-gray-700">{label}</Label>
+      <Select onValueChange={onValueChange}>
+        <SelectTrigger className="mt-2 border-gray-200 focus:border-gray-400">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent className="z-50 bg-white">
+          {options.map((option) => (
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              className="hover:bg-gray-100"
+            >
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  const renderBatteryInput = (
+    id: string,
+    label: string,
+    min: number,
+    max: number,
+    color: string,
+    field: keyof PreferencesFormData
+  ) => (
+    <div>
+      <Label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </Label>
+      <Input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        className="mt-2 border-gray-200 focus:border-gray-400"
+        {...form.register(field, { valueAsNumber: true })}
+      />
+      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+        <div
+          className={`${color} h-2 rounded-full transition-all duration-300`}
+          style={{ width: `${form.watch(field)}%` }}
+        />
+      </div>
+    </div>
+  );
+
+  const renderSwitchField = (
+    id: string,
+    label: string,
+    field: keyof PreferencesFormData
+  ) => (
+    <div className="flex items-center justify-between">
+      <Label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </Label>
+      <Switch
+        id={id}
+        checked={form.watch(field) as boolean}
+        onCheckedChange={(checked) => form.setValue(field, checked as boolean)}
+      />
+    </div>
+  );
+
+  const renderStationInfo = (rec: ChargingRecommendation) => (
+    <div
+      key={rec.stationId}
+      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+        selectedRecommendation?.stationId === rec.stationId
+          ? "border-gray-900 bg-gray-50"
+          : "border-gray-200 hover:border-gray-300"
+      }`}
+      onClick={() => setSelectedRecommendation(rec)}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center space-x-2 mb-2">
+            <h4 className="font-medium text-gray-900">{rec.station.name}</h4>
+            <span
+              className={`px-2 py-1 text-xs rounded-full border ${getPriorityColor(
+                rec.priority
+              )}`}
+            >
+              {rec.priority} priority
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mb-2">{rec.station.address}</p>
+          <p className="text-sm text-gray-700 mb-3">{rec.reason}</p>
+
+          <div className="flex items-center space-x-4 text-sm">
+            <div className="flex items-center space-x-1">
+              <DollarSign className="h-4 w-4 text-gray-400" />
+              <span>${rec.estimatedCost.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <Clock className="h-4 w-4 text-gray-400" />
+              <span>{rec.estimatedTime} min</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <MapPin className="h-4 w-4 text-gray-400" />
+              <span>{rec.station.distance?.toFixed(1)} mi</span>
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="flex items-center space-x-1 mb-2">
+            <Zap className="h-4 w-4 text-gray-400" />
+            <span className="text-sm font-medium">
+              {rec.station.connectors[0]?.power} kW
+            </span>
+          </div>
+          <span className="text-sm text-gray-500">
+            {rec.station.availability.availableConnectors} available
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMetricCard = (
+    icon: React.ReactNode,
+    label: string,
+    value: string,
+    bgColor: string,
+    textColor: string,
+    borderColor: string
+  ) => (
+    <div className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}>
+      <div className="flex items-center space-x-3">
+        <div className={textColor}>{icon}</div>
+        <div>
+          <p className={`text-sm font-medium ${textColor}`}>{label}</p>
+          <p
+            className={`text-lg font-light ${textColor.replace("600", "900")}`}
+          >
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center space-x-2 mb-6">
-        <Brain className="h-8 w-8 text-purple-600" />
-        <h1 className="text-3xl font-bold">Smart Charging Advisor</h1>
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center space-x-3">
+            <Brain className="h-6 w-6 text-gray-400" />
+            <h1 className="text-2xl font-light text-gray-900">
+              Smart Charging
+            </h1>
+          </div>
+          <p className="text-gray-500 font-light mt-2">
+            Get AI-powered charging recommendations
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Preferences Form */}
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle>Charging Preferences</CardTitle>
-              <CardDescription>
-                Configure your preferences for optimal charging recommendations
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Preferences Form */}
+          <div className="lg:col-span-1">
+            <div className="space-y-6">
+              {/* Car Info Display */}
+              {carInfo ? (
+                <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <h3 className="font-medium text-gray-900">
+                    {carInfo.year} {carInfo.make} {carInfo.model}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {carInfo.batteryCapacity} kWh • {carInfo.maxChargingPower}{" "}
+                    kW max
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    Please set up your car information in the Car Recognition
+                    section first.
+                  </p>
+                </div>
+              )}
+
+              {/* Preferences Form */}
               <form
                 onSubmit={form.handleSubmit(handleGetRecommendations)}
                 className="space-y-6"
               >
-                {/* Car Info Display */}
-                {carInfo ? (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h3 className="font-medium text-blue-900">
-                      {carInfo.year} {carInfo.make} {carInfo.model}
-                    </h3>
-                    <p className="text-sm text-blue-700">
-                      {carInfo.batteryCapacity} kWh • {carInfo.maxChargingPower}{" "}
-                      kW max
-                    </p>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      Please set up your car information in the AI Car
-                      Recognition section first.
-                    </p>
-                  </div>
+                {renderBatteryInput(
+                  "currentBatteryLevel",
+                  "Current Battery Level (%)",
+                  0,
+                  100,
+                  "bg-blue-600",
+                  "currentBatteryLevel"
                 )}
 
-                {/* Battery Level */}
-                <div className="space-y-2">
-                  <Label htmlFor="currentBatteryLevel">
-                    Current Battery Level (%)
-                  </Label>
-                  <Input
-                    id="currentBatteryLevel"
-                    type="number"
-                    min="0"
-                    max="100"
-                    {...form.register("currentBatteryLevel", {
-                      valueAsNumber: true,
-                    })}
-                  />
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${form.watch("currentBatteryLevel")}%` }}
-                    />
-                  </div>
-                </div>
+                {renderBatteryInput(
+                  "targetBatteryLevel",
+                  "Target Battery Level (%)",
+                  10,
+                  100,
+                  "bg-green-600",
+                  "targetBatteryLevel"
+                )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="targetBatteryLevel">
-                    Target Battery Level (%)
-                  </Label>
-                  <Input
-                    id="targetBatteryLevel"
-                    type="number"
-                    min="10"
-                    max="100"
-                    {...form.register("targetBatteryLevel", {
-                      valueAsNumber: true,
-                    })}
-                  />
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${form.watch("targetBatteryLevel")}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Preferences */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="prioritizeCost">
-                      Prioritize Cost Savings
-                    </Label>
-                    <Switch
-                      id="prioritizeCost"
-                      checked={form.watch("prioritizeCost")}
-                      onCheckedChange={(checked) =>
-                        form.setValue("prioritizeCost", checked)
-                      }
-                    />
-                  </div>
+                  {renderSwitchField(
+                    "prioritizeCost",
+                    "Prioritize Cost Savings",
+                    "prioritizeCost"
+                  )}
+                  {renderSwitchField(
+                    "prioritizeTime",
+                    "Prioritize Speed",
+                    "prioritizeTime"
+                  )}
 
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="prioritizeTime">Prioritize Speed</Label>
-                    <Switch
-                      id="prioritizeTime"
-                      checked={form.watch("prioritizeTime")}
-                      onCheckedChange={(checked) =>
-                        form.setValue("prioritizeTime", checked)
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="maxDistance">Max Distance (miles)</Label>
-                    <Select
-                      value={form.watch("maxDistance").toString()}
-                      onValueChange={(value) =>
-                        form.setValue("maxDistance", parseInt(value))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 miles</SelectItem>
-                        <SelectItem value="10">10 miles</SelectItem>
-                        <SelectItem value="25">25 miles</SelectItem>
-                        <SelectItem value="50">50 miles</SelectItem>
-                        <SelectItem value="100">100 miles</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {renderSelectField(
+                    "Max Distance",
+                    DISTANCE_OPTIONS,
+                    (value) => form.setValue("maxDistance", parseInt(value)),
+                    "Any distance"
+                  )}
                 </div>
 
                 <Button
                   type="submit"
-                  className="w-full"
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white"
                   disabled={loading || !carInfo || !userLocation}
                 >
                   {loading ? "Analyzing..." : "Get Recommendations"}
@@ -312,149 +404,100 @@ export default function SmartAdvisorPage() {
               </form>
 
               {error && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-sm text-red-600">{error}</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
 
-        {/* Recommendations */}
-        <div className="lg:col-span-2 space-y-4">
-          {recommendations.length > 0 ? (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <TrendingUp className="h-5 w-5" />
-                    <span>Recommended Stations</span>
-                  </CardTitle>
-                  <CardDescription>
-                    AI-powered recommendations based on your preferences
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+          {/* Recommendations */}
+          <div className="lg:col-span-2 space-y-6">
+            {recommendations.length > 0 ? (
+              <>
+                {/* Recommendations List */}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-4">
+                    Recommended Stations ({recommendations.length})
+                  </h3>
                   <div className="space-y-3">
-                    {recommendations.map((rec, index) => (
-                      <div
-                        key={rec.stationId}
-                        className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                          selectedRecommendation?.stationId === rec.stationId
-                            ? "border-blue-500 bg-blue-50"
-                            : "hover:bg-gray-50"
-                        }`}
-                        onClick={() => setSelectedRecommendation(rec)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <h3 className="font-medium">
-                                {rec.station.name}
-                              </h3>
-                              <Badge className={getPriorityColor(rec.priority)}>
-                                {rec.priority} priority
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-gray-600 mb-2">
-                              {rec.station.address}
-                            </p>
-                            <p className="text-sm text-gray-700 mb-3">
-                              {rec.reason}
-                            </p>
-
-                            <div className="flex items-center space-x-4 text-sm">
-                              <div className="flex items-center space-x-1">
-                                <DollarSign className="h-4 w-4 text-green-600" />
-                                <span>${rec.estimatedCost.toFixed(2)}</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <Clock className="h-4 w-4 text-blue-600" />
-                                <span>{rec.estimatedTime} min</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <MapPin className="h-4 w-4 text-purple-600" />
-                                <span>
-                                  {rec.station.distance?.toFixed(1)} mi
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="flex items-center space-x-1 mb-2">
-                              <Zap className="h-4 w-4 text-yellow-600" />
-                              <span className="text-sm font-medium">
-                                {rec.station.connectors[0]?.power} kW
-                              </span>
-                            </div>
-                            <Badge variant="outline">
-                              {rec.station.availability.availableConnectors}{" "}
-                              available
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                    {recommendations.map(renderStationInfo)}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* Selected Recommendation Details */}
-              {selectedRecommendation && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Why This Station?</CardTitle>
-                    <CardDescription>
-                      Detailed analysis of the recommendation factors
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <h4 className="font-medium">Cost Analysis</h4>
-                          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm">Estimated Cost</span>
-                              <span className="font-bold text-green-700">
-                                $
-                                {selectedRecommendation.estimatedCost.toFixed(
-                                  2
-                                )}
-                              </span>
-                            </div>
-                          </div>
+                {/* Selected Recommendation Details */}
+                {selectedRecommendation && (
+                  <div className="border border-gray-200 rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-medium text-gray-900">
+                          {selectedRecommendation.station.name}
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {selectedRecommendation.station.address}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="flex items-center space-x-1 mb-1">
+                          <Star className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-medium">
+                            {selectedRecommendation.station.rating}
+                          </span>
                         </div>
+                        <span className="text-sm text-gray-500">
+                          {
+                            selectedRecommendation.station.availability
+                              .availableConnectors
+                          }
+                          /
+                          {
+                            selectedRecommendation.station.availability
+                              .totalConnectors
+                          }{" "}
+                          Available
+                        </span>
+                      </div>
+                    </div>
 
-                        <div className="space-y-2">
-                          <h4 className="font-medium">Time Analysis</h4>
-                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm">Estimated Time</span>
-                              <span className="font-bold text-blue-700">
-                                {selectedRecommendation.estimatedTime} min
-                              </span>
-                            </div>
-                          </div>
-                        </div>
+                    <div className="space-y-6">
+                      {/* Cost and Time Analysis */}
+                      <div className="grid grid-cols-2 gap-6">
+                        {renderMetricCard(
+                          <DollarSign className="h-5 w-5" />,
+                          "Estimated Cost",
+                          `$${selectedRecommendation.estimatedCost.toFixed(2)}`,
+                          "bg-green-50",
+                          "text-green-600",
+                          "border-green-200"
+                        )}
+
+                        {renderMetricCard(
+                          <Clock className="h-5 w-5" />,
+                          "Estimated Time",
+                          `${selectedRecommendation.estimatedTime} min`,
+                          "bg-blue-50",
+                          "text-blue-600",
+                          "border-blue-200"
+                        )}
                       </div>
 
+                      {/* Recommendation Factors */}
                       <div>
-                        <h4 className="font-medium mb-3">
+                        <h4 className="text-sm font-medium text-gray-700 mb-3">
                           Recommendation Factors
                         </h4>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           {selectedRecommendation.factors.map(
                             (factor, index) => (
                               <div
                                 key={index}
-                                className="flex items-center space-x-3 p-2 border rounded-lg"
+                                className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg"
                               >
                                 <div className={getFactorColor(factor.impact)}>
                                   {getFactorIcon(factor.type)}
                                 </div>
                                 <div className="flex-1">
-                                  <p className="text-sm font-medium capitalize">
+                                  <p className="text-sm font-medium capitalize text-gray-900">
                                     {factor.type.replace("_", " ")}
                                   </p>
                                   <p className="text-xs text-gray-600">
@@ -476,35 +519,37 @@ export default function SmartAdvisorPage() {
                         </div>
                       </div>
 
+                      {/* Action Buttons */}
                       <div className="flex space-x-3">
-                        <Button className="flex-1">
+                        <Button className="flex-1 bg-gray-900 hover:bg-gray-800 text-white">
                           <MapPin className="h-4 w-4 mr-2" />
                           Get Directions
                         </Button>
-                        <Button variant="outline" className="flex-1">
+                        <Button
+                          variant="outline"
+                          className="flex-1 border-gray-200"
+                        >
                           <Zap className="h-4 w-4 mr-2" />
                           Start Charging
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          ) : (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Brain className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-16">
+                <Brain className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
                   No Recommendations Yet
                 </h3>
-                <p className="text-gray-600">
+                <p className="text-gray-500 font-light">
                   Configure your preferences and click "Get Recommendations" to
                   see AI-powered suggestions.
                 </p>
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

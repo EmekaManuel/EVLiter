@@ -95,21 +95,26 @@ export interface RecommendationFactor {
 // User Dashboard Types
 export interface ChargingSession {
   id: string;
+  userId: string;
   stationId: string;
   stationName: string;
+  connectorId: string;
   startTime: string;
-  endTime?: string;
+  endTime: string;
+  duration: number; // minutes
   energyDelivered: number; // kWh
-  cost: number;
-  connectorType: ConnectorType;
+  totalCost: number;
+  averagePower: number; // kW
+  batteryLevel: number; // percentage
   status: "active" | "completed" | "cancelled";
+  stationRating: number;
 }
 
 export interface UserStats {
   totalSessions: number;
-  totalEnergyDelivered: number; // kWh
-  totalCost: number;
-  averageSessionTime: number; // minutes
+  totalEnergyUsed: number; // kWh
+  totalSpent: number;
+  averageSessionDuration: number; // minutes
   favoriteStation?: string;
   monthlyUsage: MonthlyUsage[];
 }
@@ -117,7 +122,7 @@ export interface UserStats {
 export interface MonthlyUsage {
   month: string;
   sessions: number;
-  energyDelivered: number;
+  energy: number;
   cost: number;
 }
 

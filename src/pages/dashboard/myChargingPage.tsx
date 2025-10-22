@@ -1,18 +1,10 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mockChargingSessions, mockUserStats } from "@/mocks/myChargingMocks";
 import { userDashboardService } from "@/services/api/ev";
 import type { ChargingSession, UserStats } from "@/types/ev";
 import {
-  BarChart3,
   Battery,
   Clock,
   DollarSign,
@@ -30,10 +22,8 @@ export default function MyChargingPage() {
   const [currentSession, setCurrentSession] = useState<ChargingSession | null>(
     null
   );
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mock user ID - in real app, this would come from auth context
   const userId = "user-123";
 
   useEffect(() => {
@@ -41,423 +31,371 @@ export default function MyChargingPage() {
   }, []);
 
   const loadUserData = async () => {
-    setLoading(true);
     try {
-      // Load user stats and sessions in parallel
-      const [statsResponse, sessionsResponse] = await Promise.all([
-        userDashboardService.getUserStats(userId),
-        userDashboardService.getChargingSessions(userId),
-      ]);
+      // Clear any existing errors
+      setError(null);
 
-      if (statsResponse.success) {
-        setUserStats(statsResponse.data);
+      // Simulate API delay
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const mockSessions = mockChargingSessions(userId);
+      setUserStats(mockUserStats);
+      setSessions(mockSessions);
+
+      console.log("Mock data loaded:", {
+        sessions: mockSessions.length,
+        stats: mockUserStats,
+      });
+
+      const activeSession = mockSessions.find(
+        (session) => session.status === "active"
+      );
+      if (activeSession) {
+        setCurrentSession(activeSession);
       }
-
-      if (sessionsResponse.success) {
-        setSessions(sessionsResponse.data);
-
-        // Find active session
-        const activeSession = sessionsResponse.data.find(
-          (s) => s.status === "active"
-        );
-        setCurrentSession(activeSession || null);
-      }
-    } catch (err) {
-      setError("Failed to load user data");
-    } finally {
-      setLoading(false);
+    } catch {
+      setError("Failed to load charging data");
     }
   };
 
-  const handleStartCharging = async (
-    stationId: string,
-    connectorId: string
-  ) => {
+  const handleStartCharging = async () => {
     try {
+      // Clear any existing errors
+      setError(null);
+
       const response = await userDashboardService.startChargingSession(
         userId,
-        stationId,
-        connectorId
+        "station-123",
+        "connector-1"
       );
+
       if (response.success) {
         setCurrentSession(response.data);
-        await loadUserData(); // Refresh data
+        await loadUserData();
       }
-    } catch (err) {
+    } catch {
       setError("Failed to start charging session");
     }
   };
 
-  const handleEndCharging = async () => {
+  const handleStopCharging = async () => {
     if (!currentSession) return;
 
     try {
       const response = await userDashboardService.endChargingSession(
         currentSession.id
       );
+
       if (response.success) {
         setCurrentSession(null);
-        await loadUserData(); // Refresh data
+        await loadUserData();
       }
-    } catch (err) {
-      setError("Failed to end charging session");
+    } catch {
+      setError("Failed to stop charging session");
     }
   };
 
-  const formatDuration = (startTime: string, endTime?: string) => {
-    const start = new Date(startTime);
-    const end = endTime ? new Date(endTime) : new Date();
-    const diffMs = end.getTime() - start.getTime();
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const hours = Math.floor(diffMins / 60);
-    const mins = diffMins % 60;
-    return `${hours}h ${mins}m`;
+  const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   };
 
-  const getSessionStatusColor = (status: ChargingSession["status"]) => {
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const formatTime = (date: string) => {
+    return new Date(date).toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getStatusColor = (status: ChargingSession["status"]) => {
     switch (status) {
       case "active":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "text-green-600";
       case "completed":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "text-gray-600";
       case "cancelled":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "text-red-600";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "text-gray-600";
     }
   };
 
-  // Mock data for demonstration
-  const mockStats: UserStats = {
-    totalSessions: 45,
-    totalEnergyDelivered: 1250.5,
-    totalCost: 187.5,
-    averageSessionTime: 45,
-    favoriteStation: "Downtown Charging Hub",
-    monthlyUsage: [
-      { month: "2024-01", sessions: 8, energyDelivered: 220.5, cost: 33.2 },
-      { month: "2024-02", sessions: 12, energyDelivered: 340.2, cost: 51.3 },
-      { month: "2024-03", sessions: 15, energyDelivered: 425.8, cost: 64.2 },
-      { month: "2024-04", sessions: 10, energyDelivered: 264.0, cost: 39.8 },
-    ],
-  };
+  const renderStatCard = (
+    icon: React.ReactNode,
+    label: string,
+    value: string,
+    subtitle?: string
+  ) => (
+    <div className="p-6 border border-gray-200 rounded-lg">
+      <div className="flex items-center space-x-3">
+        <div className="p-2 bg-gray-100 rounded-lg">{icon}</div>
+        <div>
+          <p className="text-2xl font-light text-gray-900">{value}</p>
+          <p className="text-sm text-gray-500">{label}</p>
+          {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+        </div>
+      </div>
+    </div>
+  );
 
-  const mockSessions: ChargingSession[] = [
-    {
-      id: "session-1",
-      stationId: "station-1",
-      stationName: "Downtown Charging Hub",
-      startTime: "2024-04-15T10:30:00Z",
-      endTime: "2024-04-15T11:15:00Z",
-      energyDelivered: 45.2,
-      cost: 6.78,
-      connectorType: "CCS",
-      status: "completed",
-    },
-    {
-      id: "session-2",
-      stationId: "station-2",
-      stationName: "Mall Parking Charging",
-      startTime: "2024-04-14T14:20:00Z",
-      endTime: "2024-04-14T15:05:00Z",
-      energyDelivered: 38.7,
-      cost: 5.81,
-      connectorType: "Type 2",
-      status: "completed",
-    },
-    {
-      id: "session-3",
-      stationId: "station-3",
-      stationName: "Highway Rest Stop",
-      startTime: "2024-04-13T09:15:00Z",
-      status: "active",
-      energyDelivered: 0,
-      cost: 0,
-      connectorType: "Tesla Supercharger",
-    },
-  ];
+  const renderSessionCard = (session: ChargingSession) => (
+    <div key={session.id} className="p-4 border border-gray-200 rounded-lg">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center space-x-2">
+          <h4 className="font-medium text-gray-900">{session.stationName}</h4>
+          <span
+            className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(
+              session.status
+            )}`}
+          >
+            {session.status}
+          </span>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-medium text-gray-900">
+            ${session.totalCost.toFixed(2)}
+          </p>
+          <p className="text-xs text-gray-500">
+            {formatDate(session.startTime)}
+          </p>
+        </div>
+      </div>
 
-  const stats = userStats || mockStats;
-  const allSessions = sessions.length > 0 ? sessions : mockSessions;
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="flex items-center space-x-2">
+          <Clock className="h-4 w-4 text-gray-400" />
+          <span>{formatDuration(session.duration)}</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Battery className="h-4 w-4 text-gray-400" />
+          <span>{session.energyDelivered.toFixed(1)} kWh</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Zap className="h-4 w-4 text-gray-400" />
+          <span>{session.averagePower} kW</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Star className="h-4 w-4 text-gray-400" />
+          <span>{session.stationRating}/5</span>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-gray-100">
+        <p className="text-xs text-gray-500">
+          {formatTime(session.startTime)} - {formatTime(session.endTime)}
+        </p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center space-x-2 mb-6">
-        <Zap className="h-8 w-8 text-yellow-600" />
-        <h1 className="text-3xl font-bold">My Charging</h1>
-      </div>
-
-      {/* Current Session */}
-      {currentSession && (
-        <Card className="border-green-200 bg-green-50">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2 text-green-800">
-              <Play className="h-5 w-5" />
-              <span>Currently Charging</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <h3 className="font-medium">{currentSession.stationName}</h3>
-                <p className="text-sm text-gray-600">
-                  Started {formatDuration(currentSession.startTime)} ago
-                </p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-green-700">
-                    {currentSession.energyDelivered.toFixed(1)}
-                  </p>
-                  <p className="text-sm text-gray-600">kWh Delivered</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-green-700">
-                    ${currentSession.cost.toFixed(2)}
-                  </p>
-                  <p className="text-sm text-gray-600">Cost</p>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleEndCharging}
-                  variant="destructive"
-                  className="flex items-center space-x-2"
-                >
-                  <StopCircle className="h-4 w-4" />
-                  <span>End Session</span>
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <Battery className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-2xl font-bold">
-                  {stats.totalEnergyDelivered.toFixed(1)}
-                </p>
-                <p className="text-sm text-gray-600">kWh Total</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <DollarSign className="h-8 w-8 text-green-600" />
-              <div>
-                <p className="text-2xl font-bold">
-                  ${stats.totalCost.toFixed(2)}
-                </p>
-                <p className="text-sm text-gray-600">Total Spent</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <Clock className="h-8 w-8 text-purple-600" />
-              <div>
-                <p className="text-2xl font-bold">{stats.averageSessionTime}</p>
-                <p className="text-sm text-gray-600">Avg Session (min)</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="h-8 w-8 text-orange-600" />
-              <div>
-                <p className="text-2xl font-bold">{stats.totalSessions}</p>
-                <p className="text-sm text-gray-600">Total Sessions</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content */}
-      <Tabs defaultValue="sessions" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="sessions">Charging Sessions</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="favorites">Favorites</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="sessions" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Sessions</CardTitle>
-              <CardDescription>
-                Your charging history and session details
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {allSessions.map((session) => (
-                  <div key={session.id} className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-3">
-                        <div>
-                          <h3 className="font-medium">{session.stationName}</h3>
-                          <p className="text-sm text-gray-600">
-                            {new Date(session.startTime).toLocaleDateString()} •
-                            {formatDuration(session.startTime, session.endTime)}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge className={getSessionStatusColor(session.status)}>
-                        {session.status}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div className="flex items-center space-x-2">
-                        <Battery className="h-4 w-4 text-blue-600" />
-                        <div>
-                          <p className="font-medium">
-                            {session.energyDelivered.toFixed(1)} kWh
-                          </p>
-                          <p className="text-gray-600">Energy</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <DollarSign className="h-4 w-4 text-green-600" />
-                        <div>
-                          <p className="font-medium">
-                            ${session.cost.toFixed(2)}
-                          </p>
-                          <p className="text-gray-600">Cost</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Zap className="h-4 w-4 text-yellow-600" />
-                        <div>
-                          <p className="font-medium">{session.connectorType}</p>
-                          <p className="text-gray-600">Connector</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="h-4 w-4 text-purple-600" />
-                        <div>
-                          <p className="font-medium">Station ID</p>
-                          <p className="text-gray-600">{session.stationId}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Monthly Usage</CardTitle>
-                <CardDescription>
-                  Your charging activity over the past months
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {stats.monthlyUsage.map((month) => (
-                    <div key={month.month} className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-medium">{month.month}</span>
-                        <span>{month.sessions} sessions</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600">Energy</p>
-                          <p className="font-medium">
-                            {month.energyDelivered.toFixed(1)} kWh
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Cost</p>
-                          <p className="font-medium">
-                            ${month.cost.toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                      <Progress
-                        value={
-                          (month.sessions /
-                            Math.max(
-                              ...stats.monthlyUsage.map((m) => m.sessions)
-                            )) *
-                          100
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Favorite Station</CardTitle>
-                <CardDescription>
-                  Your most frequently used charging location
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Star className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
-                  <h3 className="text-lg font-medium">
-                    {stats.favoriteStation}
-                  </h3>
-                  <p className="text-gray-600 mt-2">
-                    Most visited charging station
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center space-x-3">
+            <Zap className="h-6 w-6 text-gray-400" />
+            <h1 className="text-2xl font-light text-gray-900">My Charging</h1>
           </div>
-        </TabsContent>
+          <p className="text-gray-500 font-light mt-2">
+            Track your charging sessions and energy usage
+          </p>
+        </div>
+      </div>
 
-        <TabsContent value="favorites" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Saved Stations</CardTitle>
-              <CardDescription>
-                Your favorite charging stations for quick access
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12">
-                <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No Saved Stations Yet
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Save your favorite charging stations for quick access
-                </p>
-                <Button variant="outline">Browse Stations</Button>
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="space-y-8">
+          {/* Stats Overview */}
+          {userStats && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-4">
+                Overview
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {renderStatCard(
+                  <Zap className="h-5 w-5 text-gray-600" />,
+                  "Total Sessions",
+                  userStats.totalSessions.toString(),
+                  "This month"
+                )}
+                {renderStatCard(
+                  <Battery className="h-5 w-5 text-gray-600" />,
+                  "Energy Used",
+                  `${userStats.totalEnergyUsed.toFixed(1)} kWh`,
+                  "Lifetime"
+                )}
+                {renderStatCard(
+                  <DollarSign className="h-5 w-5 text-gray-600" />,
+                  "Total Spent",
+                  `$${userStats.totalSpent.toFixed(2)}`,
+                  "This month"
+                )}
+                {renderStatCard(
+                  <Clock className="h-5 w-5 text-gray-600" />,
+                  "Avg Duration",
+                  formatDuration(userStats.averageSessionDuration),
+                  "Per session"
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          )}
+
+          {/* Current Session */}
+          {currentSession && (
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Active Session
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {currentSession.stationName}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-gray-900">
+                    ${currentSession.totalCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {currentSession.energyDelivered.toFixed(1)} kWh
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Battery Level</span>
+                    <span>{currentSession.batteryLevel}%</span>
+                  </div>
+                  <Progress
+                    value={currentSession.batteryLevel}
+                    className="h-2"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-lg font-light text-gray-900">
+                      {formatDuration(currentSession.duration)}
+                    </p>
+                    <p className="text-xs text-gray-500">Duration</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-light text-gray-900">
+                      {currentSession.averagePower} kW
+                    </p>
+                    <p className="text-xs text-gray-500">Power</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-light text-gray-900">
+                      {currentSession.stationRating}/5
+                    </p>
+                    <p className="text-xs text-gray-500">Rating</p>
+                  </div>
+                </div>
+
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={handleStopCharging}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Stop Charging
+                  </Button>
+                  <Button variant="outline" className="flex-1 border-gray-200">
+                    <MapPin className="h-4 w-4 mr-2" />
+                    View Station
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sessions History */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-700">
+                Charging History
+              </h3>
+              {!currentSession && (
+                <Button
+                  onClick={handleStartCharging}
+                  className="bg-gray-900 hover:bg-gray-800 text-white"
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  Start Charging
+                </Button>
+              )}
+            </div>
+
+            <Tabs defaultValue="recent" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 bg-gray-50">
+                <TabsTrigger
+                  value="recent"
+                  className="data-[state=active]:bg-white"
+                >
+                  Recent
+                </TabsTrigger>
+                <TabsTrigger
+                  value="this-month"
+                  className="data-[state=active]:bg-white"
+                >
+                  This Month
+                </TabsTrigger>
+                <TabsTrigger
+                  value="all-time"
+                  className="data-[state=active]:bg-white"
+                >
+                  All Time
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="recent" className="mt-6">
+                <div className="space-y-3">
+                  {sessions.slice(0, 5).map(renderSessionCard)}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="this-month" className="mt-6">
+                <div className="space-y-3">
+                  {sessions
+                    .filter((session) => {
+                      const sessionDate = new Date(session.startTime);
+                      const now = new Date();
+                      return (
+                        sessionDate.getMonth() === now.getMonth() &&
+                        sessionDate.getFullYear() === now.getFullYear()
+                      );
+                    })
+                    .map(renderSessionCard)}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="all-time" className="mt-6">
+                <div className="space-y-3">
+                  {sessions.map(renderSessionCard)}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
