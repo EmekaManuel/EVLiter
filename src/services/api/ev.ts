@@ -31,21 +31,47 @@ declare global {
   }
 }
 
+// Environment configuration
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const ENABLE_AI_RECOGNITION =
+  import.meta.env.VITE_ENABLE_AI_RECOGNITION === "true";
+const ENABLE_GOOGLE_MAPS = import.meta.env.VITE_ENABLE_GOOGLE_MAPS === "true";
+const ENABLE_MOCK_DATA = import.meta.env.VITE_ENABLE_MOCK_DATA === "true";
+
+// Helper function to get AI API key
+const getAiApiKey = () => {
+  if (CLAUDE_API_KEY) return CLAUDE_API_KEY;
+  if (OPENAI_API_KEY) return OPENAI_API_KEY;
+  throw new Error(
+    "No AI API key found. Please set VITE_CLAUDE_API_KEY or VITE_OPENAI_API_KEY in your .env.local file"
+  );
+};
+
+// Helper function to check if Google Maps is available
+const isGoogleMapsAvailable = () => {
+  return ENABLE_GOOGLE_MAPS && GOOGLE_MAPS_API_KEY && window.google?.maps;
+};
 
 // AI Car Recognition Service
 export const carRecognitionService = {
   // Recognize car by VIN
   recognizeByVin: async (vin: string): Promise<ApiResponse<CarInfo>> => {
     try {
+      if (!ENABLE_AI_RECOGNITION) {
+        throw new Error(
+          "AI recognition is disabled. Set VITE_ENABLE_AI_RECOGNITION=true in your .env.local file"
+        );
+      }
+
       const response = await axios.post(
         `${API_BASE_URL}/ai/car-recognition/vin`,
         {
           vin,
-          apiKey:
-            import.meta.env.VITE_CLAUDE_API_KEY ||
-            import.meta.env.VITE_OPENAI_API_KEY,
+          apiKey: getAiApiKey(),
         }
       );
       return response.data;
@@ -61,15 +87,19 @@ export const carRecognitionService = {
     year: number
   ): Promise<ApiResponse<CarInfo>> => {
     try {
+      if (!ENABLE_AI_RECOGNITION) {
+        throw new Error(
+          "AI recognition is disabled. Set VITE_ENABLE_AI_RECOGNITION=true in your .env.local file"
+        );
+      }
+
       const response = await axios.post(
         `${API_BASE_URL}/ai/car-recognition/model`,
         {
           make,
           model,
           year,
-          apiKey:
-            import.meta.env.VITE_CLAUDE_API_KEY ||
-            import.meta.env.VITE_OPENAI_API_KEY,
+          apiKey: getAiApiKey(),
         }
       );
       return response.data;
