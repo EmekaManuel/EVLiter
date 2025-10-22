@@ -42,6 +42,7 @@ export default function DashboardLayout() {
   // Handle store selection (no longer used but kept for compatibility)
   const handleStoreSelection = (storeId: string) => {
     // No-op since we're not using store-based navigation
+    console.log("storeId", storeId);
   };
 
   // Check if current route is active
