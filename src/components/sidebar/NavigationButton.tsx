@@ -70,8 +70,8 @@ export function NavigationButton({
       onClick={() => item.href && onNavigate(item.href)}
       className={`flex items-center space-x-3 px-3 py-3 text-sm font-light rounded-lg transition-colors w-full text-left ${
         isActive
-          ? "bg-gray-50 text-gray-900"
-          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          ? "bg-gray-200 text-gray-900"
+          : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
       }`}
     >
       <item.icon className="w-4 h-4 text-gray-400" />

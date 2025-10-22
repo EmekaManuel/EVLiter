@@ -21,9 +21,7 @@ export function SidebarContent({
   return (
     <>
       {/* Logo */}
-      <div className="p-6 border-b border-gray-100">
-        <Logo size="md" className="mb-0" />
-      </div>
+      <Logo />
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
