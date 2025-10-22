@@ -1,14 +1,6 @@
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import React, { useEffect } from "react";
-import { stores, getStoreById } from "@/data/stores";
-import { Search, Info, Menu, X } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
-import { uiStore } from "@/store";
 import NetworkBanner from "@/components/NetworkBanner";
-import { useShallow } from "zustand/react/shallow";
+import { Sidebar } from "@/components/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,113 +9,74 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Sidebar } from "@/components/sidebar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/context/AuthContext";
+import { stores } from "@/data/stores";
 import { useSidebar } from "@/hooks/useSidebar";
+import { uiStore } from "@/store";
+import { Info, Menu, Search, X } from "lucide-react";
+import React, { useEffect } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useShallow } from "zustand/react/shallow";
 
 export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const [, setSelectedStoreId] = React.useState("run2-dineout");
   const { sidebarOpen, handleToggle, handleNavigation } = useSidebar();
   const isOffline = uiStore(useShallow((s) => s.isOffline));
 
-  // Get current store from URL params
+  // Clear store active states since we're not using store-based navigation anymore
   useEffect(() => {
-    const pathSegments = location.pathname.split("/");
-    const storeIdIndex = pathSegments.findIndex(
-      (segment) => segment === "stores"
-    );
-    if (storeIdIndex !== -1 && pathSegments[storeIdIndex + 1]) {
-      const storeId = pathSegments[storeIdIndex + 1];
-      const store = getStoreById(storeId);
-      if (store) {
-        setSelectedStoreId(storeId);
-        // Update store active states - set only the current store as active
-        stores.forEach((s) => (s.active = s.id === storeId));
-      }
-    } else {
-      // If not on a store page, clear all store active states
-      stores.forEach((s) => (s.active = false));
-    }
+    stores.forEach((s) => (s.active = false));
   }, [location.pathname]);
 
   // Handle navigation
   const handleNavigate = (href: string) => {
     handleNavigation(() => {
-      // If navigating to a non-store page, clear store active states immediately
-      if (!href.includes("/stores/")) {
-        stores.forEach((store) => (store.active = false));
-      }
       navigate(href);
     });
   };
 
-  // Handle store selection
+  // Handle store selection (no longer used but kept for compatibility)
   const handleStoreSelection = (storeId: string) => {
-    handleNavigation(() => {
-      setSelectedStoreId(storeId);
-      // Update all stores to inactive
-      stores.forEach((store) => (store.active = false));
-      // Set selected store as active
-      const selectedStoreData = stores.find((store) => store.id === storeId);
-      if (selectedStoreData) {
-        selectedStoreData.active = true;
-      }
-      // Navigate to store details page
-      navigate(`/dashboard/stores/${storeId}`);
-    });
+    // No-op since we're not using store-based navigation
   };
 
   // Check if current route is active
   const isActiveRoute = (href: string) => {
-    // If we're on a store details page, don't highlight any other navigation items
-    const pathSegments = location.pathname.split("/");
-    const isOnStorePage =
-      pathSegments.includes("stores") && pathSegments.length > 2;
-
-    if (isOnStorePage) {
-      // When on a store page, only return true for exact matches that aren't store-related
-      // This prevents other navigation items from being highlighted
-      return false;
-    }
-
-    // For other pages, use exact match
     return location.pathname === href;
   };
 
   // Generate breadcrumbs based on current location
   const generateBreadcrumbs = () => {
     const pathSegments = location.pathname.split("/").filter(Boolean);
-    const breadcrumbs = [{ label: "Company", href: "/dashboard/company" }];
+    const breadcrumbs = [{ label: "Dashboard", href: "/dashboard/overview" }];
 
-    // Check if we're on a store details page
-    const storeIdIndex = pathSegments.findIndex(
-      (segment) => segment === "stores"
-    );
-    if (storeIdIndex !== -1 && pathSegments[storeIdIndex + 1]) {
-      const storeId = pathSegments[storeIdIndex + 1];
-      const store = getStoreById(storeId);
-      if (store) {
-        // breadcrumbs.push({ label: "Run2 Ehf.", href: "/dashboard/company" });
-        breadcrumbs.push({ label: store.name, href: location.pathname });
-      }
-    } else if (
-      pathSegments.includes("dashboard") &&
-      pathSegments.length === 2
-    ) {
-      // If we're on a dashboard sub-page but not in store context
-      const pageName = pathSegments[1];
-      const pageLabels: Record<string, string> = {
-        "company-data": "Company Data",
-        profile: "Profile",
-        home: "Home",
-      };
-      if (pageLabels[pageName]) {
-        breadcrumbs.push({
-          label: pageLabels[pageName],
-          href: location.pathname,
-        });
+    // Handle EV charging app routes
+    if (pathSegments.includes("dashboard")) {
+      const dashboardIndex = pathSegments.findIndex(
+        (segment) => segment === "dashboard"
+      );
+
+      if (dashboardIndex !== -1 && pathSegments[dashboardIndex + 1]) {
+        const pageName = pathSegments[dashboardIndex + 1];
+        const pageLabels: Record<string, string> = {
+          overview: "Overview",
+          "ai-car-recognition": "AI Car Recognition",
+          "charging-stations": "Charging Stations",
+          "smart-advisor": "Smart Advisor",
+          "my-charging": "My Charging",
+          "admin-dashboard": "Admin Dashboard",
+        };
+
+        if (pageLabels[pageName]) {
+          breadcrumbs.push({
+            label: pageLabels[pageName],
+            href: location.pathname,
+          });
+        }
       }
     }
 
@@ -183,13 +136,13 @@ export default function DashboardLayout() {
                     <React.Fragment key={index}>
                       <BreadcrumbItem>
                         {index === breadcrumbs.length - 1 ? (
-                          <BreadcrumbPage className="text-sm text-gray-900">
+                          <BreadcrumbPage className="text-sm font-light text-gray-900">
                             {crumb.label}
                           </BreadcrumbPage>
                         ) : (
                           <BreadcrumbLink
                             href={crumb.href}
-                            className="text-sm text-gray-500 hover:text-gray-700"
+                            className="text-sm font-light text-gray-500 hover:text-gray-700"
                           >
                             {crumb.label}
                           </BreadcrumbLink>
@@ -197,7 +150,7 @@ export default function DashboardLayout() {
                       </BreadcrumbItem>
                       {index < breadcrumbs.length - 1 && (
                         <BreadcrumbSeparator className="text-gray-400">
-                          &gt;
+                          /
                         </BreadcrumbSeparator>
                       )}
                     </React.Fragment>
