@@ -23,14 +23,14 @@ export function Sidebar({
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 md:hidden bg-gray-400/50 bg-opacity-50"
+          className="fixed inset-0 z-40 md:hidden bg-black/20"
           onClick={handleClose}
         />
       )}
 
       {/* Sidebar */}
       <div
-        className={`bg-gray-100 border-r border-gray-200 flex flex-col overflow-y-auto fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+        className={`bg-white border-r border-gray-100 flex flex-col overflow-y-auto fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

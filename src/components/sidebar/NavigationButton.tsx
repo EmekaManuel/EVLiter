@@ -19,21 +19,23 @@ export function NavigationButton({
       <div>
         <button
           onClick={item.onToggle}
-          className={`w-full flex items-center justify-between px-3 py-3 text-sm font-medium rounded-md transition-colors touch-manipulation ${
+          className={`w-full flex items-center justify-between px-3 py-3 text-sm font-light rounded-lg transition-colors ${
             isActive
-              ? "bg-yellow-100 text-gray-900"
-              : "text-gray-700 hover:bg-yellow-100"
+              ? "bg-gray-50 text-gray-900"
+              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
           }`}
         >
           <div className="flex items-center space-x-3">
-            <item.icon className="w-4 h-4" />
+            <item.icon className="w-4 h-4 text-gray-400" />
             <span>{item.label}</span>
-            <span className="text-xs text-gray-500">({item.count})</span>
+            {item.count && (
+              <span className="text-xs text-gray-400">({item.count})</span>
+            )}
           </div>
           {item.expanded ? (
-            <ChevronUp className="w-4 h-4" />
+            <ChevronUp className="w-4 h-4 text-gray-400" />
           ) : (
-            <ChevronDown className="w-4 h-4" />
+            <ChevronDown className="w-4 h-4 text-gray-400" />
           )}
         </button>
 
@@ -43,15 +45,15 @@ export function NavigationButton({
               <button
                 key={childIndex}
                 onClick={() => onStoreSelect(child.id)}
-                className={`w-full text-left px-3 py-3 text-sm rounded-md transition-colors touch-manipulation ${
+                className={`w-full text-left px-3 py-2 text-sm font-light rounded-lg transition-colors ${
                   child.active
-                    ? "bg-yellow-100 text-gray-900"
-                    : "text-gray-600 hover:bg-gray-50"
+                    ? "bg-gray-50 text-gray-900"
+                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
                 }`}
               >
-                <div className="font-medium">{child.name}</div>
+                <div className="font-light">{child.name}</div>
                 {child.onboarded && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-400 mt-1">
                     Onboarded: {child.onboarded}
                   </div>
                 )}
@@ -66,13 +68,13 @@ export function NavigationButton({
   return (
     <button
       onClick={() => item.href && onNavigate(item.href)}
-      className={`flex items-center space-x-3 px-3 py-3 text-sm font-medium rounded-md transition-colors w-full text-left touch-manipulation ${
+      className={`flex items-center space-x-3 px-3 py-3 text-sm font-light rounded-lg transition-colors w-full text-left ${
         isActive
-          ? "bg-yellow-100 text-gray-900"
-          : "text-gray-700 hover:bg-yellow-100"
+          ? "bg-gray-50 text-gray-900"
+          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
       }`}
     >
-      <item.icon className="w-4 h-4" />
+      <item.icon className="w-4 h-4 text-gray-400" />
       <span>{item.label}</span>
     </button>
   );

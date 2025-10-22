@@ -21,12 +21,12 @@ export function SidebarContent({
   return (
     <>
       {/* Logo */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-6 border-b border-gray-100">
         <Logo size="md" className="mb-0" />
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-1">
         {navigationItems.map((item, index) => (
           <div key={index}>
             <NavigationButton
