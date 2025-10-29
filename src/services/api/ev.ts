@@ -99,7 +99,6 @@ export const carRecognitionService = {
           make,
           model,
           year,
-          apiKey: getAiApiKey(),
         }
       );
       return response.data;

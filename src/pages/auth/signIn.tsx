@@ -269,15 +269,7 @@ export default function AuthPage() {
                     Sign Up
                   </span>
                 </p>
-                <p>
-                  Ready to get started?{" "}
-                  <span
-                    className="text-blue-600 font-medium cursor-pointer hover:underline"
-                    onClick={() => navigate("/onboard")}
-                  >
-                    Go to Onboarding
-                  </span>
-                </p>
+
                 <p>
                   <span
                     className="text-blue-600 font-medium cursor-pointer hover:underline"

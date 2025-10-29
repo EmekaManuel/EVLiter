@@ -211,4 +211,69 @@ export const handlers = [
       address: "123 Market St, SF",
     });
   }),
+
+  // AI Car Recognition: by VIN
+  http.post("/api/ai/car-recognition/vin", async ({ request }) => {
+    await delay(350);
+    const body = (await request.json()) as { vin?: string; apiKey?: string };
+
+    if (!body?.vin || String(body.vin).length !== 17) {
+      return HttpResponse.json(
+        { success: false, message: "VIN must be 17 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Return a plausible mocked car info
+    return HttpResponse.json({
+      success: true,
+      data: {
+        make: "Tesla",
+        model: "Model 3",
+        year: 2022,
+        batteryCapacityKwh: 60,
+        rangeKm: 430,
+        connectorTypes: ["CCS", "Type 2"],
+        imageUrl: "/assets/ev-image.jpg",
+      },
+    });
+  }),
+
+  // AI Car Recognition: by make/model/year
+  http.post("/api/ai/car-recognition/model", async ({ request }) => {
+    await delay(350);
+    const body = (await request.json()) as {
+      make?: string;
+      model?: string;
+      year?: number;
+      apiKey?: string;
+    };
+
+    if (!body?.make || !body?.model || !body?.year) {
+      return HttpResponse.json(
+        { success: false, message: "make, model and year are required" },
+        { status: 400 }
+      );
+    }
+
+    return HttpResponse.json({
+      success: true,
+      data: {
+        make: body.make,
+        model: body.model,
+        year: body.year,
+        batteryCapacityKwh: 77,
+        rangeKm: 520,
+        connectorTypes: ["CCS", "Type 2"],
+        imageUrl: "/assets/ev-image.jpg",
+      },
+    });
+  }),
+
+  // AI Car Image generation (mocked)
+  http.post("/api/ai/car-image", async () => {
+    await delay(300);
+    // We don't use request body for the mock; just return a stock image path
+    return HttpResponse.json({ imageUrl: "/assets/ev-image.jpg" });
+  }),
 ];
