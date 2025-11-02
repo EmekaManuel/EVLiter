@@ -26,19 +26,19 @@ api.interceptors.response.use(
     if (status === 401) {
       clearAccessToken();
       // Dispatch session expired event for modal
-      window.dispatchEvent(new Event("gp:session-expired"));
+      window.dispatchEvent(new Event("evliter:session-expired"));
       // Optionally, dispatch a logout event for listeners
-      window.dispatchEvent(new Event("gp:unauthorized"));
+      window.dispatchEvent(new Event("evliter:unauthorized"));
     }
     // Emit custom events for global handlers
     if (!navigator.onLine || error.code === "ERR_NETWORK") {
-      window.dispatchEvent(new Event("gp:network-offline"));
+      window.dispatchEvent(new Event("evliter:network-offline"));
     } else if (status && status >= 500) {
       window.dispatchEvent(
-        new CustomEvent("gp:server-error", { detail: { status } })
+        new CustomEvent("evliter:server-error", { detail: { status } })
       );
     } else if (status === 404) {
-      window.dispatchEvent(new CustomEvent("gp:not-found"));
+      window.dispatchEvent(new CustomEvent("evliter:not-found"));
     }
     return Promise.reject(error);
   }

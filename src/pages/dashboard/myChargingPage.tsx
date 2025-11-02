@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mockChargingSessions, mockUserStats } from "@/mocks/myChargingMocks";
-import { userDashboardService } from "@/services/api/ev";
 import type { ChargingSession, UserStats } from "@/types/ev";
 import {
   Battery,

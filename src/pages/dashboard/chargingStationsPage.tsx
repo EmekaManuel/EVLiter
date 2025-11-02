@@ -10,12 +10,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { chargingStationService, mapsService } from "@/services/api/ev";
 import type {
   ChargingStation,
   LocationData,
   StationSearchFilters,
 } from "@/types/ev";
+import MapComponent from "@/components/Map";
+import { useJsApiLoader } from "@react-google-maps/api";
+import { getUserLocation, calculateDistance } from "@/utils/getLocation";
 import {
   DollarSign,
   MapPin,
@@ -23,26 +25,11 @@ import {
   Search,
   Star,
   Zap,
+  Loader2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, type SetStateAction } from "react";
 
-declare global {
-  interface Window {
-    google: {
-      maps: {
-        Map: new (element: HTMLElement, options: any) => any;
-        Geocoder: new () => {
-          geocode: (
-            request: any,
-            callback: (results: any[] | null, status: any) => void
-          ) => void;
-        };
-        GeocoderResult: any;
-        GeocoderStatus: any;
-      };
-    };
-  }
-}
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const CONNECTOR_TYPES = [
   { value: "all", label: "All Types" },
@@ -71,79 +58,75 @@ const DISTANCES = [
 ];
 
 export default function ChargingStationsPage() {
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY || "",
+    libraries: ["places", "geometry"],
+  });
+
   const [stations, setStations] = useState<ChargingStation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
-  const [map, setMap] = useState<any>(null);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
   const [selectedStation, setSelectedStation] =
     useState<ChargingStation | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<StationSearchFilters>({});
-  const mapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    initializeMapAndLocation();
-  });
+    if (isLoaded) {
+      initializeLocation();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded]);
 
-  const initializeMapAndLocation = async () => {
+  const initializeLocation = async () => {
+    setLocationLoading(true);
+    setLocationError(null);
+
     try {
-      const location = await mapsService.getCurrentLocation();
-      setUserLocation(location);
+      const location = await getUserLocation({
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
 
-      if (mapRef.current && window.google) {
-        const mapInstance = new window.google.maps.Map(mapRef.current, {
-          center: { lat: location.latitude, lng: location.longitude },
-          zoom: 12,
-          mapTypeId: "roadmap",
-        });
-        setMap(mapInstance);
-        await loadNearbyStations(location);
-      }
-    } catch {
-      console.error("Failed to initialize map or get location");
+      setUserLocation(location);
+      console.log("User location obtained:", location);
+
+      // Load nearby stations once we have the location
+      await loadNearbyStations(location);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to get location";
+      setLocationError(errorMessage);
+      console.error("Failed to get location:", error);
+
+      // Set a default location (fallback)
+      const defaultLocation: LocationData = {
+        latitude: 40.7128,
+        longitude: -74.006,
+      };
+      setUserLocation(defaultLocation);
+    } finally {
+      setLocationLoading(false);
     }
   };
 
   const loadNearbyStations = async (location: LocationData) => {
     setLoading(true);
     try {
-      const response = await chargingStationService.getNearbyStations(
-        location,
-        25,
-        filters
-      );
-      if (response.success) {
-        setStations(response.data);
-        addStationsToMap(response.data);
-      }
-    } catch {
-      console.error("Failed to load charging stations");
+      // Your API call to fetch stations would go here
+      // For now, we'll just log it
+      console.log("Loading stations near:", location);
+
+      // Example: const response = await chargingStationService.getNearbyStations(location, 25, filters);
+      // setStations(response.data);
+    } catch (error) {
+      console.error("Failed to load charging stations:", error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const addStationsToMap = (stations: ChargingStation[]) => {
-    if (!map) return;
-
-    stations.forEach((station) => {
-      const marker = new (window.google.maps as any).Marker({
-        position: { lat: station.latitude, lng: station.longitude },
-        map: map,
-        title: station.name,
-        icon: {
-          url: getStationIcon(station),
-          // @ts-expect crazt types
-          scaledSize: new (window.google.maps as any).Size(30, 30),
-        },
-      });
-
-      marker.addListener("click", () => {
-        setSelectedStation(station);
-        map.setCenter({ lat: station.latitude, lng: station.longitude });
-        map.setZoom(15);
-      });
-    });
   };
 
   const getStationIcon = (station: ChargingStation) => {
@@ -158,6 +141,14 @@ export default function ChargingStationsPage() {
     return "/icons/station-green.png";
   };
 
+  const handleStationClick = (station: ChargingStation) => {
+    setSelectedStation(station);
+    if (map) {
+      map.setCenter({ lat: station.latitude, lng: station.longitude });
+      map.setZoom(15);
+    }
+  };
+
   const handleSearch = async () => {
     if (!userLocation) return;
     await loadNearbyStations(userLocation);
@@ -169,7 +160,7 @@ export default function ChargingStationsPage() {
 
   const getDistance = (station: ChargingStation) => {
     if (!userLocation) return null;
-    return mapsService.calculateDistance(
+    return calculateDistance(
       userLocation.latitude,
       userLocation.longitude,
       station.latitude,
@@ -196,7 +187,7 @@ export default function ChargingStationsPage() {
     <div className="relative">
       <Label className="text-sm font-medium text-gray-700">{label}</Label>
       <Select onValueChange={onValueChange}>
-        <SelectTrigger className="mt-2  border-gray-200 focus:border-gray-400">
+        <SelectTrigger className="mt-2 border-gray-200 focus:border-gray-400">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="z-50 bg-white">
@@ -222,7 +213,7 @@ export default function ChargingStationsPage() {
           ? "border-gray-900 bg-gray-50"
           : "border-gray-200 hover:border-gray-300"
       }`}
-      onClick={() => setSelectedStation(station)}
+      onClick={() => handleStationClick(station)}
     >
       <div className="flex justify-between items-start">
         <div className="flex-1">
@@ -253,6 +244,26 @@ export default function ChargingStationsPage() {
     </div>
   );
 
+  // Prepare markers for MapComponent
+  const mapMarkers = stations.map((station) => ({
+    id: station.id,
+    position: { lat: station.latitude, lng: station.longitude },
+    title: station.name,
+    icon: getStationIcon(station),
+    onClick: () => handleStationClick(station),
+  }));
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+          <div className="text-gray-500">Loading maps...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -267,6 +278,23 @@ export default function ChargingStationsPage() {
           <p className="text-gray-500 font-light mt-2">
             Find nearby charging points with real-time availability
           </p>
+
+          {/* Location Error Alert */}
+          {locationError && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                <strong>Location access:</strong> {locationError}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={initializeLocation}
+                className="mt-2 border-yellow-300 text-yellow-800 hover:bg-yellow-100"
+              >
+                Try Again
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -329,7 +357,14 @@ export default function ChargingStationsPage() {
                   className="w-full bg-gray-900 hover:bg-gray-800 text-white"
                   disabled={loading}
                 >
-                  {loading ? "Searching..." : "Apply Filters"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Searching...
+                    </>
+                  ) : (
+                    "Apply Filters"
+                  )}
                 </Button>
               </div>
 
@@ -339,10 +374,16 @@ export default function ChargingStationsPage() {
                   Nearby Stations ({stations.length})
                 </h3>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {stations.map((station) =>
-                    renderStationInfo(
-                      station,
-                      selectedStation?.id === station.id
+                  {stations.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No stations found nearby
+                    </div>
+                  ) : (
+                    stations.map((station) =>
+                      renderStationInfo(
+                        station,
+                        selectedStation?.id === station.id
+                      )
                     )
                   )}
                 </div>
@@ -357,10 +398,41 @@ export default function ChargingStationsPage() {
               <h3 className="text-sm font-medium text-gray-700 mb-4">
                 Map View
               </h3>
-              <div
-                ref={mapRef}
-                className="h-96 w-full rounded-lg border border-gray-200"
-              />
+              {locationLoading ? (
+                <div className="h-96 w-full rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                    <p className="text-gray-500">Getting your location...</p>
+                  </div>
+                </div>
+              ) : userLocation ? (
+                <MapComponent
+                  center={{
+                    lat: userLocation.latitude,
+                    lng: userLocation.longitude,
+                  }}
+                  zoom={12}
+                  markers={mapMarkers}
+                  onMapLoad={(
+                    mapInstance: SetStateAction<google.maps.Map | null>
+                  ) => setMap(mapInstance)}
+                />
+              ) : (
+                <div className="h-96 w-full rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
+                  <div className="text-center">
+                    <p className="text-gray-500 mb-3">
+                      Unable to load location
+                    </p>
+                    <Button
+                      onClick={initializeLocation}
+                      variant="outline"
+                      className="border-gray-300"
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Selected Station Details */}

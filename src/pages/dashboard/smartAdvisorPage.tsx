@@ -10,7 +10,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { mapsService, smartAdvisorService } from "@/services/api/ev";
 import type {
   CarInfo,
   ChargingRecommendation,
@@ -110,7 +109,7 @@ export default function SmartAdvisorPage() {
     }
   };
 
-  const handleGetRecommendations = async (data: PreferencesFormData) => {
+  const handleGetRecommendations = async () => {
     if (!carInfo || !userLocation) {
       setError("Please ensure your car information and location are available");
       return;
@@ -120,24 +119,7 @@ export default function SmartAdvisorPage() {
     setError(null);
 
     try {
-      const response = await smartAdvisorService.getRecommendations(
-        carInfo,
-        userLocation,
-        {
-          prioritizeCost: data.prioritizeCost,
-          prioritizeTime: data.prioritizeTime,
-          maxDistance: data.maxDistance,
-        }
-      );
-
-      if (response.success) {
-        setRecommendations(response.data);
-        if (response.data.length > 0) {
-          setSelectedRecommendation(response.data[0]);
-        }
-      } else {
-        setError(response.message || "Failed to get recommendations");
-      }
+      console.log("third");
     } catch {
       setError("Failed to get charging recommendations");
     } finally {
