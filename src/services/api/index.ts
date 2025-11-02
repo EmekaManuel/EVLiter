@@ -1,5 +1,6 @@
 export { default as api } from "../apiClient";
 export * as authApi from "./modules/auth";
+export * as carAdvisorApi from "./modules/carAdvisor";
 export * as demoApi from "./modules/demo";
 export * as transactionsApi from "./modules/transactions";
 export * as invoicesApi from "./modules/invoices";

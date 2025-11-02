@@ -71,6 +71,8 @@ export default function ChargingStationsPage() {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [selectedStation, setSelectedStation] =
     useState<ChargingStation | null>(null);
+  const [directions, setDirections] =
+    useState<google.maps.DirectionsResult | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<StationSearchFilters>({});
 
@@ -141,16 +143,64 @@ export default function ChargingStationsPage() {
     return "/icons/station-green.png";
   };
 
+  const calculateDirections = (
+    origin: LocationData,
+    destination: ChargingStation
+  ) => {
+    if (!window.google?.maps?.DirectionsService) {
+      console.warn("DirectionsService not available");
+      return;
+    }
+
+    const directionsService = new window.google.maps.DirectionsService();
+
+    directionsService.route(
+      {
+        origin: { lat: origin.latitude, lng: origin.longitude },
+        destination: {
+          lat: destination.latitude,
+          lng: destination.longitude,
+        },
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === "OK" && result) {
+          setDirections(result);
+          if (map && result.routes[0]) {
+            const bounds = new window.google.maps.LatLngBounds();
+            result.routes[0].legs.forEach((leg) => {
+              bounds.extend(leg.start_location);
+              bounds.extend(leg.end_location);
+            });
+            map.fitBounds(bounds);
+          }
+        } else {
+          console.error("Directions request failed:", status);
+          setDirections(null);
+        }
+      }
+    );
+  };
+
   const handleStationClick = (station: ChargingStation) => {
     setSelectedStation(station);
     if (map) {
       map.setCenter({ lat: station.latitude, lng: station.longitude });
       map.setZoom(15);
     }
+
+    // Calculate directions if user location is available
+    if (userLocation) {
+      calculateDirections(userLocation, station);
+    } else {
+      setDirections(null);
+    }
   };
 
   const handleSearch = async () => {
     if (!userLocation) return;
+    setDirections(null); // Clear previous directions
+    setSelectedStation(null); // Clear selection
     await loadNearbyStations(userLocation);
   };
 
@@ -413,6 +463,7 @@ export default function ChargingStationsPage() {
                   }}
                   zoom={12}
                   markers={mapMarkers}
+                  directions={directions}
                   onMapLoad={(
                     mapInstance: SetStateAction<google.maps.Map | null>
                   ) => setMap(mapInstance)}
@@ -567,7 +618,19 @@ export default function ChargingStationsPage() {
                 </Tabs>
 
                 <div className="mt-6 flex space-x-3">
-                  <Button className="flex-1 bg-gray-900 hover:bg-gray-800 text-white">
+                  <Button
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white"
+                    onClick={() => {
+                      if (selectedStation && userLocation) {
+                        if (!directions) {
+                          calculateDirections(userLocation, selectedStation);
+                        }
+                        // Also open in Google Maps
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.latitude},${userLocation.longitude}&destination=${selectedStation.latitude},${selectedStation.longitude}&travelmode=driving`;
+                        window.open(url, "_blank");
+                      }
+                    }}
+                  >
                     <Navigation className="h-4 w-4 mr-2" />
                     Get Directions
                   </Button>

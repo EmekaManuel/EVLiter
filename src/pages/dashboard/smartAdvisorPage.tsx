@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type {
-  CarInfo,
   ChargingRecommendation,
   LocationData,
   RecommendationFactor,
@@ -27,10 +26,20 @@ import {
   MapPin,
   Star,
   Zap,
+  Loader2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type SetStateAction } from "react";
 import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 import { z } from "zod";
+import MapComponent from "@/components/Map";
+import { useJsApiLoader } from "@react-google-maps/api";
+import { getUserLocation, calculateDistance } from "@/utils/getLocation";
+import { getRecommendations as getRecommendationsApi } from "@/services/api/modules/carAdvisor";
+import { useCarInfoStore } from "@/store/carInfoStore";
+import type { RecommendationResult } from "@/services/api/modules/carAdvisor";
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const preferencesSchema = z.object({
   prioritizeCost: z.boolean(),
@@ -71,15 +80,33 @@ const PRIORITY_COLORS = {
 } as const;
 
 export default function SmartAdvisorPage() {
-  const [carInfo, setCarInfo] = useState<CarInfo | null>(null);
+  const navigate = useNavigate();
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY || "",
+    libraries: ["places", "geometry"],
+  });
+
+  const carInfo = useCarInfoStore((state) => state.carInfo);
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
   const [recommendations, setRecommendations] = useState<
     ChargingRecommendation[]
   >([]);
+  const [chargingStrategy, setChargingStrategy] = useState<
+    RecommendationResult["chargingStrategy"] | null
+  >(null);
+  const [carInsights, setCarInsights] = useState<
+    RecommendationResult["carInsights"] | null
+  >(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecommendation, setSelectedRecommendation] =
     useState<ChargingRecommendation | null>(null);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [directions, setDirections] =
+    useState<google.maps.DirectionsResult | null>(null);
 
   const form = useForm<PreferencesFormData>({
     resolver: zodResolver(preferencesSchema),
@@ -93,20 +120,74 @@ export default function SmartAdvisorPage() {
   });
 
   useEffect(() => {
-    initializeLocation();
-    const savedCarInfo = localStorage.getItem("carInfo");
-    if (savedCarInfo) {
-      setCarInfo(JSON.parse(savedCarInfo));
+    if (isLoaded) {
+      initializeLocation();
     }
-  }, []);
+  }, [isLoaded]);
 
   const initializeLocation = async () => {
+    setLocationLoading(true);
+    setLocationError(null);
+
     try {
-      const location = await mapsService.getCurrentLocation();
+      const location = await getUserLocation({
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
       setUserLocation(location);
-    } catch {
-      setError("Failed to get your location");
+      console.log("User location obtained:", location);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to get location";
+      setLocationError(errorMessage);
+      console.error("Failed to get location:", error);
+
+      // Set a default location (fallback)
+      const defaultLocation: LocationData = {
+        latitude: 40.7128,
+        longitude: -74.006,
+      };
+      setUserLocation(defaultLocation);
+    } finally {
+      setLocationLoading(false);
     }
+  };
+
+  // Helper function to get city/state from coordinates using Google Geocoding
+  const getCityFromCoordinates = async (
+    lat: number,
+    lng: number
+  ): Promise<{ city: string; state?: string }> => {
+    if (!window.google?.maps?.Geocoder) {
+      // Fallback to default location if Geocoder not available
+      return { city: "Lagos", state: "Lagos" };
+    }
+
+    return new Promise((resolve) => {
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === "OK" && results && results.length > 0) {
+          let city = "Lagos";
+          let state: string | undefined;
+
+          // Extract city and state from address components
+          for (const component of results[0].address_components) {
+            if (component.types.includes("locality")) {
+              city = component.long_name;
+            } else if (
+              component.types.includes("administrative_area_level_1")
+            ) {
+              state = component.long_name;
+            }
+          }
+
+          resolve({ city, state });
+        } else {
+          // Fallback to default
+          resolve({ city: "Lagos", state: "Lagos" });
+        }
+      });
+    });
   };
 
   const handleGetRecommendations = async () => {
@@ -117,11 +198,73 @@ export default function SmartAdvisorPage() {
 
     setLoading(true);
     setError(null);
+    // Clear previous data
+    setRecommendations([]);
+    setChargingStrategy(null);
+    setCarInsights(null);
+    setConfidence(null);
+    setSelectedRecommendation(null);
 
     try {
-      console.log("third");
-    } catch {
-      setError("Failed to get charging recommendations");
+      // Get city and state from coordinates
+      const locationInfo = await getCityFromCoordinates(
+        userLocation.latitude,
+        userLocation.longitude
+      );
+
+      // Build request payload
+      const formValues = form.getValues();
+      const preferences = {
+        prioritizeSpeed: formValues.prioritizeTime,
+        dailyDrivingKm: undefined, // Could be added as a form field if needed
+        chargingFrequency: undefined, // Could be added as a form field if needed
+        budget: formValues.prioritizeCost
+          ? { min: 0, max: undefined }
+          : undefined,
+        homeCharging: undefined, // Could be added as a form field if needed
+      };
+
+      const requestPayload = {
+        car: {
+          make: carInfo.make,
+          model: carInfo.model,
+          year: carInfo.year,
+          batteryCapacityKWh: carInfo.batteryCapacity,
+          rangeKm: carInfo.estimatedRange
+            ? carInfo.estimatedRange * 1.60934
+            : undefined, // Convert miles to km
+        },
+        location: {
+          city: locationInfo.city,
+          state: locationInfo.state,
+          coordinates: {
+            lat: userLocation.latitude,
+            lng: userLocation.longitude,
+          },
+        },
+        preferences,
+      };
+
+      // Call the API
+      const result = await getRecommendationsApi(requestPayload, userLocation);
+
+      // Update state with all data from API
+      setRecommendations(result.recommendations);
+      setChargingStrategy(result.strategy);
+      setCarInsights(result.insights);
+      setConfidence(result.confidence);
+    } catch (err) {
+      const errorMessage =
+        (
+          err as {
+            response?: { data?: { message?: string } };
+            message?: string;
+          }
+        )?.response?.data?.message ||
+        (err as Error)?.message ||
+        "Failed to get charging recommendations";
+      setError(errorMessage);
+      console.error("Error getting recommendations:", err);
     } finally {
       setLoading(false);
     }
@@ -201,17 +344,88 @@ export default function SmartAdvisorPage() {
     label: string,
     field: keyof PreferencesFormData
   ) => (
-    <div className="flex items-center justify-between">
-      <Label htmlFor={id} className="text-sm font-medium text-gray-700">
+    <div className="flex items-center justify-between py-2">
+      <Label
+        htmlFor={id}
+        className="text-sm font-medium text-gray-700 cursor-pointer"
+      >
         {label}
       </Label>
       <Switch
         id={id}
         checked={form.watch(field) as boolean}
         onCheckedChange={(checked) => form.setValue(field, checked as boolean)}
+        className="data-[state=checked]:bg-gray-900 data-[state=unchecked]:bg-gray-300 border border-gray-400 data-[state=unchecked]:border-gray-400 shadow-sm [&>[data-slot=switch-thumb]]:bg-white [&>[data-slot=switch-thumb]]:shadow-md [&>[data-slot=switch-thumb]]:border [&>[data-slot=switch-thumb]]:border-gray-300 [&>[data-slot=switch-thumb]]:size-[14px]"
       />
     </div>
   );
+
+  const calculateDirections = (
+    origin: LocationData,
+    destination: ChargingRecommendation["station"]
+  ) => {
+    if (!window.google?.maps?.DirectionsService) {
+      console.warn("DirectionsService not available");
+      return;
+    }
+
+    const directionsService = new window.google.maps.DirectionsService();
+
+    directionsService.route(
+      {
+        origin: { lat: origin.latitude, lng: origin.longitude },
+        destination: {
+          lat: destination.latitude,
+          lng: destination.longitude,
+        },
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === "OK" && result) {
+          setDirections(result);
+          if (map && result.routes[0]) {
+            const bounds = new window.google.maps.LatLngBounds();
+            result.routes[0].legs.forEach((leg) => {
+              bounds.extend(leg.start_location);
+              bounds.extend(leg.end_location);
+            });
+            map.fitBounds(bounds);
+          }
+        } else {
+          console.error("Directions request failed:", status);
+          setDirections(null);
+        }
+      }
+    );
+  };
+
+  const handleRecommendationClick = (rec: ChargingRecommendation) => {
+    setSelectedRecommendation(rec);
+    if (map) {
+      map.setCenter({
+        lat: rec.station.latitude,
+        lng: rec.station.longitude,
+      });
+      map.setZoom(15);
+    }
+
+    // Calculate directions if user location is available
+    if (userLocation) {
+      calculateDirections(userLocation, rec.station);
+    } else {
+      setDirections(null);
+    }
+  };
+
+  const getStationIcon = (rec: ChargingRecommendation) => {
+    const availableConnectors = rec.station.availability.availableConnectors;
+    const totalConnectors = rec.station.availability.totalConnectors;
+
+    if (availableConnectors === 0) return "/icons/station-red.png";
+    if (availableConnectors < totalConnectors / 2)
+      return "/icons/station-yellow.png";
+    return "/icons/station-green.png";
+  };
 
   const renderStationInfo = (rec: ChargingRecommendation) => (
     <div
@@ -221,7 +435,7 @@ export default function SmartAdvisorPage() {
           ? "border-gray-900 bg-gray-50"
           : "border-gray-200 hover:border-gray-300"
       }`}
-      onClick={() => setSelectedRecommendation(rec)}
+      onClick={() => handleRecommendationClick(rec)}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
@@ -249,7 +463,17 @@ export default function SmartAdvisorPage() {
             </div>
             <div className="flex items-center space-x-1">
               <MapPin className="h-4 w-4 text-gray-400" />
-              <span>{rec.station.distance?.toFixed(1)} mi</span>
+              <span>
+                {userLocation
+                  ? calculateDistance(
+                      userLocation.latitude,
+                      userLocation.longitude,
+                      rec.station.latitude,
+                      rec.station.longitude
+                    ).toFixed(1)
+                  : rec.station.distance?.toFixed(1) || "N/A"}{" "}
+                mi
+              </span>
             </div>
           </div>
         </div>
@@ -291,6 +515,17 @@ export default function SmartAdvisorPage() {
     </div>
   );
 
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+          <div className="text-gray-500">Loading maps...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -305,6 +540,23 @@ export default function SmartAdvisorPage() {
           <p className="text-gray-500 font-light mt-2">
             Get AI-powered charging recommendations
           </p>
+
+          {/* Location Error Alert */}
+          {locationError && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                <strong>Location access:</strong> {locationError}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={initializeLocation}
+                className="mt-2 border-yellow-300 text-yellow-800 hover:bg-yellow-100"
+              >
+                Try Again
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -326,10 +578,19 @@ export default function SmartAdvisorPage() {
                 </div>
               ) : (
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800">
+                  <p className="text-sm text-yellow-800 mb-3">
                     Please set up your car information in the Car Recognition
                     section first.
                   </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/dashboard/ai-car-recognition")}
+                    className="w-full border-yellow-300 text-yellow-800 hover:bg-yellow-100"
+                  >
+                    Go to Car Recognition
+                  </Button>
                 </div>
               )}
 
@@ -394,9 +655,195 @@ export default function SmartAdvisorPage() {
           </div>
 
           {/* Recommendations */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 scrollbar-hide space-y-6 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
+            {" "}
             {recommendations.length > 0 ? (
               <>
+                {/* Strategy and Insights Cards */}
+                {(chargingStrategy || carInsights) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Charging Strategy */}
+                    {chargingStrategy && (
+                      <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <Brain className="h-5 w-5 text-blue-600" />
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Charging Strategy
+                          </h3>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <span className="text-gray-600">Frequency: </span>
+                            <span className="font-medium text-gray-900">
+                              {chargingStrategy.recommendedFrequency}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">
+                              Optimal Range:{" "}
+                            </span>
+                            <span className="font-medium text-gray-900">
+                              {chargingStrategy.optimalChargeRange}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">
+                              Monthly Cost:{" "}
+                            </span>
+                            <span className="font-medium text-gray-900">
+                              {chargingStrategy.estimatedMonthlyCost}
+                            </span>
+                          </div>
+                          {chargingStrategy.tips &&
+                            chargingStrategy.tips.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-blue-200">
+                                <p className="text-xs font-medium text-gray-700 mb-2">
+                                  Tips:
+                                </p>
+                                <ul className="space-y-1">
+                                  {chargingStrategy.tips.map((tip, index) => (
+                                    <li
+                                      key={index}
+                                      className="text-xs text-gray-600 flex items-start"
+                                    >
+                                      <span className="mr-2">•</span>
+                                      <span>{tip}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Car Insights */}
+                    {carInsights && (
+                      <div className="border border-gray-200 rounded-lg p-4 bg-purple-50">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <Info className="h-5 w-5 text-purple-600" />
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Car Insights
+                          </h3>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          {carInsights.efficiency && (
+                            <div>
+                              <span className="text-gray-600">
+                                Efficiency:{" "}
+                              </span>
+                              <span className="font-medium text-gray-900">
+                                {carInsights.efficiency}
+                              </span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-gray-600">
+                              Range Anxiety:{" "}
+                            </span>
+                            <span className="font-medium text-gray-900">
+                              {carInsights.rangeAnxietyLevel}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">
+                              Suitability Score:{" "}
+                            </span>
+                            <span className="font-medium text-gray-900">
+                              {carInsights.suitabilityScore}/10
+                            </span>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className="bg-purple-600 h-2 rounded-full"
+                                style={{
+                                  width: `${
+                                    (carInsights.suitabilityScore / 10) * 100
+                                  }%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                          {carInsights.considerations &&
+                            carInsights.considerations.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-purple-200">
+                                <p className="text-xs font-medium text-gray-700 mb-2">
+                                  Considerations:
+                                </p>
+                                <ul className="space-y-1">
+                                  {carInsights.considerations.map(
+                                    (consideration, index) => (
+                                      <li
+                                        key={index}
+                                        className="text-xs text-gray-600 flex items-start"
+                                      >
+                                        <span className="mr-2">•</span>
+                                        <span>{consideration}</span>
+                                      </li>
+                                    )
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Map */}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-4">
+                    Map View
+                  </h3>
+                  {locationLoading ? (
+                    <div className="h-96 w-full rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
+                      <div className="flex flex-col items-center gap-3">
+                        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                        <p className="text-gray-500">
+                          Getting your location...
+                        </p>
+                      </div>
+                    </div>
+                  ) : userLocation ? (
+                    <MapComponent
+                      center={{
+                        lat: userLocation.latitude,
+                        lng: userLocation.longitude,
+                      }}
+                      zoom={recommendations.length > 0 ? 11 : 12}
+                      markers={recommendations.map((rec) => ({
+                        id: rec.stationId,
+                        position: {
+                          lat: rec.station.latitude,
+                          lng: rec.station.longitude,
+                        },
+                        title: rec.station.name,
+                        icon: getStationIcon(rec),
+                        onClick: () => handleRecommendationClick(rec),
+                      }))}
+                      directions={directions}
+                      onMapLoad={(
+                        mapInstance: SetStateAction<google.maps.Map | null>
+                      ) => setMap(mapInstance)}
+                    />
+                  ) : (
+                    <div className="h-96 w-full rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
+                      <div className="text-center">
+                        <p className="text-gray-500 mb-3">
+                          Unable to load location
+                        </p>
+                        <Button
+                          onClick={initializeLocation}
+                          variant="outline"
+                          className="border-gray-300"
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Recommendations List */}
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-4">
@@ -447,7 +894,7 @@ export default function SmartAdvisorPage() {
                         {renderMetricCard(
                           <DollarSign className="h-5 w-5" />,
                           "Estimated Cost",
-                          `$${selectedRecommendation.estimatedCost.toFixed(2)}`,
+                          `₦${selectedRecommendation.estimatedCost.toFixed(2)}`,
                           "bg-green-50",
                           "text-green-600",
                           "border-green-200"
@@ -503,7 +950,22 @@ export default function SmartAdvisorPage() {
 
                       {/* Action Buttons */}
                       <div className="flex space-x-3">
-                        <Button className="flex-1 bg-gray-900 hover:bg-gray-800 text-white">
+                        <Button
+                          className="flex-1 bg-gray-900 hover:bg-gray-800 text-white"
+                          onClick={() => {
+                            if (selectedRecommendation && userLocation) {
+                              if (!directions) {
+                                calculateDirections(
+                                  userLocation,
+                                  selectedRecommendation.station
+                                );
+                              }
+                              // Also open in Google Maps
+                              const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.latitude},${userLocation.longitude}&destination=${selectedRecommendation.station.latitude},${selectedRecommendation.station.longitude}&travelmode=driving`;
+                              window.open(url, "_blank");
+                            }
+                          }}
+                        >
                           <MapPin className="h-4 w-4 mr-2" />
                           Get Directions
                         </Button>
@@ -515,6 +977,35 @@ export default function SmartAdvisorPage() {
                           Start Charging
                         </Button>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confidence Indicator */}
+                {confidence !== null && (
+                  <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <Star className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm text-gray-600">
+                        Recommendation Confidence:
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            confidence > 0.7
+                              ? "bg-green-600"
+                              : confidence > 0.4
+                              ? "bg-yellow-600"
+                              : "bg-red-600"
+                          }`}
+                          style={{ width: `${confidence * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-gray-900 w-12 text-right">
+                        {(confidence * 100).toFixed(0)}%
+                      </span>
                     </div>
                   </div>
                 )}

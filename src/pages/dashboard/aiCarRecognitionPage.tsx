@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { ConnectorType } from "@/types/ev";
+import type { CarInfo, ConnectorType } from "@/types/ev";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Battery, Car, MapPin, Zap, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +13,7 @@ import {
   recognizeCarByModel,
   type CarRecognitionResponse,
 } from "@/services/api/modules/carRecognition";
+import { useCarInfoStore } from "@/store/carInfoStore";
 
 const vinSchema = z.object({
   vin: z
@@ -43,7 +44,45 @@ const connectorTypes: ConnectorType[] = [
   "GB/T",
 ];
 
+// Helper function to convert CarRecognitionResponse to CarInfo
+function convertToCarInfo(response: CarRecognitionResponse): CarInfo {
+  // Get the primary connector type (use first available or default to Type 2)
+  const connectorType: ConnectorType =
+    (response.connectorTypes?.[0] as ConnectorType) || "Type 2";
+
+  // Calculate battery capacity (convert from string or use default)
+  const batteryCapacity =
+    response.charging?.capacityKWh ||
+    (response.battery
+      ? parseFloat(response.battery.replace(/[^\d.]/g, ""))
+      : 75); // Default 75 kWh if not available
+
+  // Get max charging power (prefer DC, fallback to AC, then default)
+  const maxChargingPower =
+    response.charging?.dcMaxKw ||
+    response.charging?.acMaxKw ||
+    response.charging?.onboardChargerKw ||
+    11; // Default 11 kW AC
+
+  // Estimate range based on battery capacity (rough estimate: 4 miles per kWh)
+  const estimatedRange = batteryCapacity * 4;
+
+  return {
+    id: response.vin || `${response.make}-${response.model}-${response.year}`,
+    make: response.make,
+    model: response.model,
+    year: response.year,
+    vin: response.vin,
+    batteryCapacity,
+    chargingConnector: connectorType,
+    maxChargingPower,
+    estimatedRange,
+    imageUrl: response.imageUrl || undefined,
+  };
+}
+
 export default function AiCarRecognitionPage() {
+  const { setCarInfo: saveCarInfo } = useCarInfoStore();
   const [carInfo, setCarInfo] = useState<CarRecognitionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,11 +102,15 @@ export default function AiCarRecognitionPage() {
     try {
       const result = await recognizeCarByVIN({ vin: data.vin });
       setCarInfo(result);
+      // Save to Zustand store
+      const carInfoData = convertToCarInfo(result);
+      saveCarInfo(carInfoData);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to recognize car by VIN";
       setError(message);
       setCarInfo(null);
+      saveCarInfo(null);
     } finally {
       setLoading(false);
     }
@@ -84,11 +127,15 @@ export default function AiCarRecognitionPage() {
         year: data.year,
       });
       setCarInfo(result);
+      // Save to Zustand store
+      const carInfoData = convertToCarInfo(result);
+      saveCarInfo(carInfoData);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to recognize car by model";
       setError(message);
       setCarInfo(null);
+      saveCarInfo(null);
     } finally {
       setLoading(false);
     }

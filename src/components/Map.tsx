@@ -1,4 +1,4 @@
-import { GoogleMap, Marker } from "@react-google-maps/api";
+import { GoogleMap, Marker, DirectionsRenderer } from "@react-google-maps/api";
 import { useCallback } from "react";
 
 interface MapComponentProps {
@@ -11,6 +11,7 @@ interface MapComponentProps {
     icon?: string;
     onClick?: () => void;
   }>;
+  directions?: google.maps.DirectionsResult | null;
   onMapLoad?: (map: google.maps.Map) => void;
   className?: string;
   mapContainerStyle?: React.CSSProperties;
@@ -33,6 +34,7 @@ export default function MapComponent({
   center,
   zoom = 12,
   markers = [],
+  directions = null,
   onMapLoad,
   className = "h-96 w-full rounded-lg border border-gray-200",
   mapContainerStyle = defaultMapContainerStyle,
@@ -49,6 +51,17 @@ export default function MapComponent({
 
   const mergedOptions = { ...defaultOptions, ...options };
 
+  // Directions renderer options
+  const directionsRendererOptions: google.maps.DirectionsRendererOptions = {
+    suppressMarkers: false,
+    preserveViewport: false,
+    polylineOptions: {
+      strokeColor: "#3b82f6", // Blue color
+      strokeWeight: 4,
+      strokeOpacity: 0.8,
+    },
+  };
+
   return (
     <div className={className}>
       <GoogleMap
@@ -58,6 +71,15 @@ export default function MapComponent({
         options={mergedOptions}
         onLoad={handleLoad}
       >
+        {/* Render directions if available */}
+        {directions && (
+          <DirectionsRenderer
+            directions={directions}
+            options={directionsRendererOptions}
+          />
+        )}
+
+        {/* Render markers */}
         {markers.map((marker) => (
           <Marker
             key={marker.id}
