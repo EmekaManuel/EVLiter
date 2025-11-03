@@ -1,17 +1,4 @@
-import type { ChargingSession, UserStats } from "@/types/ev";
-
-export const mockUserStats: UserStats = {
-  totalSessions: 47,
-  totalEnergyUsed: 1247.5,
-  totalSpent: 187.25,
-  averageSessionDuration: 45,
-  monthlyUsage: [
-    { month: "Jan", sessions: 8, energy: 180.5, cost: 28.5 },
-    { month: "Feb", sessions: 12, energy: 245.2, cost: 38.75 },
-    { month: "Mar", sessions: 15, energy: 312.8, cost: 49.2 },
-    { month: "Apr", sessions: 12, energy: 509.0, cost: 70.8 },
-  ],
-};
+import type { ChargingSession } from "@/types/ev";
 
 export const mockChargingSessions = (userId: string): ChargingSession[] => [
   {

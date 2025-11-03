@@ -100,14 +100,15 @@ export interface ChargingSession {
   stationName: string;
   connectorId: string;
   startTime: string;
-  endTime: string;
+  endTime?: string;
   duration: number; // minutes
   energyDelivered: number; // kWh
   totalCost: number;
   averagePower: number; // kW
   batteryLevel: number; // percentage
+  batteryLevelStart?: number; // percentage
   status: "active" | "completed" | "cancelled";
-  stationRating: number;
+  stationRating?: number;
 }
 
 export interface UserStats {
@@ -122,8 +123,11 @@ export interface UserStats {
 export interface MonthlyUsage {
   month: string;
   sessions: number;
-  energy: number;
-  cost: number;
+  energyUsed: number; // kWh
+  totalSpent: number; // Naira
+  // Legacy fields for backward compatibility
+  energy?: number;
+  cost?: number;
 }
 
 // Admin Dashboard Types

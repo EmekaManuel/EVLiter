@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mockChargingSessions, mockUserStats } from "@/mocks/myChargingMocks";
+import * as chargingSessionsApi from "@/services/api/modules/chargingSessions";
 import type { ChargingSession, UserStats } from "@/types/ev";
 import {
   Battery,
@@ -13,7 +13,7 @@ import {
   StopCircle,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function MyChargingPage() {
   const [sessions, setSessions] = useState<ChargingSession[]>([]);
@@ -22,58 +22,130 @@ export default function MyChargingPage() {
     null
   );
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<
+    "recent" | "this-month" | "all-time"
+  >("recent");
+  const [realTimeDuration, setRealTimeDuration] = useState<number>(0);
 
-  const userId = "user-123";
+  const loadUserData = useCallback(async () => {
+    try {
+      setError(null);
+      setLoading(true);
+
+      // Load dashboard data (sessions, stats, active session)
+      const dashboardData = await chargingSessionsApi.getDashboard();
+
+      // Map monthlyUsage to include legacy fields for backward compatibility
+      const mappedStats = {
+        ...dashboardData.stats,
+        monthlyUsage: dashboardData.stats.monthlyUsage.map((usage) => ({
+          ...usage,
+          energy: usage.energyUsed,
+          cost: usage.totalSpent,
+        })),
+      };
+
+      setUserStats(mappedStats);
+      setSessions(dashboardData.sessions);
+      setCurrentSession(dashboardData.activeSession);
+
+      // Load filtered sessions based on active tab
+      if (activeTab !== "all-time") {
+        const filteredSessions = await chargingSessionsApi.getSessions({
+          filter: activeTab,
+          limit: "50".toString(),
+        });
+        setSessions(filteredSessions);
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load charging data";
+      setError(errorMessage);
+      console.error("Error loading charging data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     loadUserData();
-  }, []);
+  }, [loadUserData]);
 
-  const loadUserData = async () => {
-    try {
-      // Clear any existing errors
-      setError(null);
-
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const mockSessions = mockChargingSessions(userId);
-      setUserStats(mockUserStats);
-      setSessions(mockSessions);
-
-      console.log("Mock data loaded:", {
-        sessions: mockSessions.length,
-        stats: mockUserStats,
-      });
-
-      const activeSession = mockSessions.find(
-        (session) => session.status === "active"
-      );
-      if (activeSession) {
-        setCurrentSession(activeSession);
-      }
-    } catch {
-      setError("Failed to load charging data");
+  // Real-time updates for active session
+  useEffect(() => {
+    if (!currentSession || currentSession.status !== "active") {
+      setRealTimeDuration(0);
+      return;
     }
-  };
+
+    // Calculate real-time duration
+    const updateDuration = () => {
+      const startTime = new Date(currentSession.startTime).getTime();
+      const now = Date.now();
+      const elapsedMinutes = Math.floor((now - startTime) / 60000);
+      setRealTimeDuration(elapsedMinutes);
+    };
+
+    // Update immediately
+    updateDuration();
+
+    // Update every second for smooth timer
+    const interval = setInterval(updateDuration, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentSession]);
+
+  // Poll active session for updates (battery level, energy, etc.)
+  useEffect(() => {
+    if (!currentSession || currentSession.status !== "active") {
+      return;
+    }
+
+    const pollActiveSession = async () => {
+      try {
+        const activeSession = await chargingSessionsApi.getActiveSession();
+        if (activeSession) {
+          setCurrentSession(activeSession);
+        } else {
+          // Session ended
+          setCurrentSession(null);
+          loadUserData();
+        }
+      } catch (err) {
+        console.error("Error polling active session:", err);
+      }
+    };
+
+    // Poll every 5 seconds
+    const interval = setInterval(pollActiveSession, 5000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.id, currentSession?.status]);
 
   const handleStartCharging = async () => {
     try {
-      // Clear any existing errors
       setError(null);
 
-      const response = await userDashboardService.startChargingSession(
-        userId,
-        "station-123",
-        "connector-1"
-      );
+      // TODO: Get these from actual station selection
+      const stationId = "station-123";
+      const connectorId = "connector-1";
+      const batteryLevelStart = 20; // TODO: Get from actual car data
 
-      if (response.success) {
-        setCurrentSession(response.data);
-        await loadUserData();
-      }
-    } catch {
-      setError("Failed to start charging session");
+      const session = await chargingSessionsApi.startChargingSession({
+        stationId,
+        connectorId,
+        batteryLevelStart,
+      });
+
+      setCurrentSession(session);
+      await loadUserData();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to start charging session";
+      setError(errorMessage);
+      console.error("Error starting charging session:", err);
     }
   };
 
@@ -81,16 +153,20 @@ export default function MyChargingPage() {
     if (!currentSession) return;
 
     try {
-      const response = await userDashboardService.endChargingSession(
-        currentSession.id
-      );
+      setError(null);
 
-      if (response.success) {
-        setCurrentSession(null);
-        await loadUserData();
-      }
-    } catch {
-      setError("Failed to stop charging session");
+      await chargingSessionsApi.endChargingSession({
+        sessionId: currentSession.id,
+        batteryLevelEnd: currentSession.batteryLevel,
+      });
+
+      setCurrentSession(null);
+      await loadUserData();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to stop charging session";
+      setError(errorMessage);
+      console.error("Error stopping charging session:", err);
     }
   };
 
@@ -98,6 +174,11 @@ export default function MyChargingPage() {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  };
+
+  // Clean up station name (remove redundant "Charging Station" prefix)
+  const cleanStationName = (name: string) => {
+    return name.replace(/^Charging Station\s+/i, "").trim() || name;
   };
 
   const formatDate = (date: string) => {
@@ -150,7 +231,9 @@ export default function MyChargingPage() {
     <div key={session.id} className="p-4 border border-gray-200 rounded-lg">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <h4 className="font-medium text-gray-900">{session.stationName}</h4>
+          <h4 className="font-medium text-gray-900">
+            {cleanStationName(session.stationName)}
+          </h4>
           <span
             className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(
               session.status
@@ -182,15 +265,18 @@ export default function MyChargingPage() {
           <Zap className="h-4 w-4 text-gray-400" />
           <span>{session.averagePower} kW</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <Star className="h-4 w-4 text-gray-400" />
-          <span>{session.stationRating}/5</span>
-        </div>
+        {session.stationRating && (
+          <div className="flex items-center space-x-2">
+            <Star className="h-4 w-4 text-gray-400" />
+            <span>{session.stationRating}/5</span>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 pt-3 border-t border-gray-100">
         <p className="text-xs text-gray-500">
-          {formatTime(session.startTime)} - {formatTime(session.endTime)}
+          {formatTime(session.startTime)}
+          {session.endTime ? ` - ${formatTime(session.endTime)}` : " - Active"}
         </p>
       </div>
     </div>
@@ -257,7 +343,7 @@ export default function MyChargingPage() {
                     Active Session
                   </h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    {currentSession.stationName}
+                    {cleanStationName(currentSession.stationName)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -285,19 +371,27 @@ export default function MyChargingPage() {
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-lg font-light text-gray-900">
-                      {formatDuration(currentSession.duration)}
+                      {formatDuration(
+                        realTimeDuration > 0
+                          ? realTimeDuration
+                          : currentSession.duration
+                      )}
                     </p>
                     <p className="text-xs text-gray-500">Duration</p>
                   </div>
                   <div>
                     <p className="text-lg font-light text-gray-900">
-                      {currentSession.averagePower} kW
+                      {currentSession.averagePower > 0
+                        ? `${currentSession.averagePower.toFixed(1)} kW`
+                        : "0.0 kW"}
                     </p>
                     <p className="text-xs text-gray-500">Power</p>
                   </div>
                   <div>
                     <p className="text-lg font-light text-gray-900">
-                      {currentSession.stationRating}/5
+                      {currentSession.stationRating
+                        ? `${currentSession.stationRating}/5`
+                        : "N/A"}
                     </p>
                     <p className="text-xs text-gray-500">Rating</p>
                   </div>
@@ -337,7 +431,13 @@ export default function MyChargingPage() {
               )}
             </div>
 
-            <Tabs defaultValue="recent" className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) =>
+                setActiveTab(value as "recent" | "this-month" | "all-time")
+              }
+              className="w-full"
+            >
               <TabsList className="grid w-full grid-cols-3 bg-gray-50">
                 <TabsTrigger
                   value="recent"
@@ -361,28 +461,39 @@ export default function MyChargingPage() {
 
               <TabsContent value="recent" className="mt-6">
                 <div className="space-y-3">
-                  {sessions.slice(0, 5).map(renderSessionCard)}
+                  {loading ? (
+                    <p className="text-sm text-gray-500">Loading...</p>
+                  ) : sessions.length === 0 ? (
+                    <p className="text-sm text-gray-500">No recent sessions</p>
+                  ) : (
+                    sessions.map(renderSessionCard)
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="this-month" className="mt-6">
                 <div className="space-y-3">
-                  {sessions
-                    .filter((session) => {
-                      const sessionDate = new Date(session.startTime);
-                      const now = new Date();
-                      return (
-                        sessionDate.getMonth() === now.getMonth() &&
-                        sessionDate.getFullYear() === now.getFullYear()
-                      );
-                    })
-                    .map(renderSessionCard)}
+                  {loading ? (
+                    <p className="text-sm text-gray-500">Loading...</p>
+                  ) : sessions.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      No sessions this month
+                    </p>
+                  ) : (
+                    sessions.map(renderSessionCard)
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="all-time" className="mt-6">
                 <div className="space-y-3">
-                  {sessions.map(renderSessionCard)}
+                  {loading ? (
+                    <p className="text-sm text-gray-500">Loading...</p>
+                  ) : sessions.length === 0 ? (
+                    <p className="text-sm text-gray-500">No sessions found</p>
+                  ) : (
+                    sessions.map(renderSessionCard)
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
