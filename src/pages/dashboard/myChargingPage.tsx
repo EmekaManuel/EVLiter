@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StartChargingDialog } from "@/components/StartChargingDialog";
 import * as chargingSessionsApi from "@/services/api/modules/chargingSessions";
-import type { ChargingSession, UserStats } from "@/types/ev";
+import type { ChargingSession, UserStats, LocationData } from "@/types/ev";
+import { getUserLocation } from "@/utils/getLocation";
 import {
   Battery,
   Clock,
@@ -27,6 +29,8 @@ export default function MyChargingPage() {
     "recent" | "this-month" | "all-time"
   >("recent");
   const [realTimeDuration, setRealTimeDuration] = useState<number>(0);
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [userLocation, setUserLocation] = useState<LocationData | null>(null);
 
   const loadUserData = useCallback(async () => {
     try {
@@ -71,6 +75,18 @@ export default function MyChargingPage() {
   useEffect(() => {
     loadUserData();
   }, [loadUserData]);
+
+  // Get user location on mount
+  useEffect(() => {
+    getUserLocation()
+      .then((location) => {
+        setUserLocation(location);
+      })
+      .catch((error) => {
+        console.error("Failed to get user location:", error);
+        // Don't block the app if location fails
+      });
+  }, []);
 
   // Real-time updates for active session
   useEffect(() => {
@@ -117,26 +133,25 @@ export default function MyChargingPage() {
       }
     };
 
-    // Poll every 5 seconds
-    const interval = setInterval(pollActiveSession, 5000);
+    // Poll every 30 seconds (as recommended in the documentation)
+    const interval = setInterval(pollActiveSession, 30000);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id, currentSession?.status]);
 
-  const handleStartCharging = async () => {
+  const handleStartCharging = async (data: {
+    stationId: string;
+    connectorId: string;
+    batteryLevelStart: number;
+  }) => {
     try {
       setError(null);
 
-      // TODO: Get these from actual station selection
-      const stationId = "station-123";
-      const connectorId = "connector-1";
-      const batteryLevelStart = 20; // TODO: Get from actual car data
-
       const session = await chargingSessionsApi.startChargingSession({
-        stationId,
-        connectorId,
-        batteryLevelStart,
+        stationId: data.stationId,
+        connectorId: data.connectorId,
+        batteryLevelStart: data.batteryLevelStart,
       });
 
       setCurrentSession(session);
@@ -146,6 +161,7 @@ export default function MyChargingPage() {
         err instanceof Error ? err.message : "Failed to start charging session";
       setError(errorMessage);
       console.error("Error starting charging session:", err);
+      throw err; // Re-throw to let dialog handle it
     }
   };
 
@@ -422,7 +438,7 @@ export default function MyChargingPage() {
               </h3>
               {!currentSession && (
                 <Button
-                  onClick={handleStartCharging}
+                  onClick={() => setShowStartDialog(true)}
                   className="bg-gray-900 hover:bg-gray-800 text-white"
                 >
                   <Play className="h-4 w-4 mr-2" />
@@ -506,6 +522,14 @@ export default function MyChargingPage() {
           )}
         </div>
       </div>
+
+      {/* Start Charging Dialog */}
+      <StartChargingDialog
+        open={showStartDialog}
+        onOpenChange={setShowStartDialog}
+        onStartCharging={handleStartCharging}
+        userLocation={userLocation || undefined}
+      />
     </div>
   );
 }
