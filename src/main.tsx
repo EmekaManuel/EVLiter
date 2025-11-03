@@ -11,17 +11,8 @@ import { uiStore } from "@/store";
 import { App } from "@/App";
 import { SessionManager } from "@/components/SessionManager";
 
-async function enableMocking() {
-  if (import.meta.env.DEV) {
-    const { worker } = await import("@/mocks/browser");
-    await worker.start({ serviceWorker: { url: "/mockServiceWorker.js" } });
-  }
-}
-
 // Hydrate auth store from persisted token on startup
 authStore.getState().hydrateFromStorage();
-
-await enableMocking();
 
 // Wire global online/offline listeners
 window.addEventListener("online", () => uiStore.getState().setOffline(false));

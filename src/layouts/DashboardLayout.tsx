@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/context/AuthContext";
 import { stores } from "@/data/stores";
 import { useSidebar } from "@/hooks/useSidebar";
 import { uiStore } from "@/store";
@@ -23,7 +22,6 @@ import { useShallow } from "zustand/react/shallow";
 export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
   const { sidebarOpen, handleToggle, handleNavigation } = useSidebar();
   const isOffline = uiStore(useShallow((s) => s.isOffline));
 
@@ -100,10 +98,6 @@ export default function DashboardLayout() {
         isActiveRoute={isActiveRoute}
         onNavigate={handleNavigate}
         onStoreSelect={handleStoreSelection}
-        onLogout={() => {
-          logout();
-          navigate("/auth/sign-in", { replace: true });
-        }}
       />
 
       {/* Main Content */}

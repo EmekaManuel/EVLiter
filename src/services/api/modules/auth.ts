@@ -1,56 +1,58 @@
 import api from "@/services/apiClient";
 
-export type SignInPayload = { email: string; password: string };
-export type SignInResponse = { accessToken: string };
-
-export async function signIn(payload: SignInPayload) {
-  const { data } = await api.post<SignInResponse>("/auth/sign-in", payload);
-  return data;
-}
-
-export type MeResponse = { id: string; email: string; role: string };
-export async function me() {
-  const { data } = await api.get<MeResponse>("/me");
-  return data;
-}
-
-// POST APIs
-export type CreateUserPayload = {
+export type RegisterPayload = {
   email: string;
   password: string;
-  role: "admin" | "user";
-  firstName: string;
-  lastName: string;
+  name?: string;
+};
+export type LoginPayload = { email: string; password: string };
+
+export type TokenResponse = {
+  user: { id: string; email: string; name?: string; role: "user" | "admin" };
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 };
 
-export type CreateUserResponse = {
-  id: string;
-  email: string;
-  role: string;
-  firstName: string;
-  lastName: string;
-  createdAt: string;
-};
-
-export async function createUser(payload: CreateUserPayload) {
-  const { data } = await api.post<CreateUserResponse>("/auth/users", payload);
+export async function register(payload: RegisterPayload) {
+  const { data } = await api.post<TokenResponse>("/auth/register", payload);
   return data;
 }
 
-export type ResetPasswordPayload = {
+export async function login(payload: LoginPayload) {
+  const { data } = await api.post<TokenResponse>("/auth/login", payload);
+  return data;
+}
+
+export type RefreshResponse = { accessToken: string; expiresIn: number };
+export async function refresh(refreshToken: string) {
+  const { data } = await api.post<RefreshResponse>("/auth/refresh", {
+    refreshToken,
+  });
+  return data;
+}
+
+export async function logout() {
+  const { data } = await api.post<{ success: boolean }>("/auth/logout", {});
+  return data;
+}
+
+export type MeResponse = {
+  id: string;
   email: string;
+  name?: string;
+  role: string;
+  avatarUrl?: string;
 };
 
-export type ResetPasswordResponse = {
-  message: string;
-  resetToken?: string;
-};
+export async function me() {
+  const { data } = await api.get<MeResponse>("/auth/me");
+  return data;
+}
 
-export async function resetPassword(payload: ResetPasswordPayload) {
-  const { data } = await api.post<ResetPasswordResponse>(
-    "/auth/reset-password",
-    payload
-  );
+export type UpdateProfilePayload = { name?: string; avatarUrl?: string };
+export async function updateProfile(payload: UpdateProfilePayload) {
+  const { data } = await api.put<MeResponse>("/auth/me", payload);
   return data;
 }
 
@@ -58,83 +60,23 @@ export type ChangePasswordPayload = {
   currentPassword: string;
   newPassword: string;
 };
-
-export type ChangePasswordResponse = {
-  message: string;
-};
-
 export async function changePassword(payload: ChangePasswordPayload) {
-  const { data } = await api.post<ChangePasswordResponse>(
-    "/auth/change-password",
-    payload
+  const { data } = await api.put<{ success: true }>("/auth/password", payload);
+  return data;
+}
+
+export async function forgotPassword(email: string) {
+  const { data } = await api.post<{ success: boolean; token?: string }>(
+    "/auth/forgot-password",
+    { email }
   );
   return data;
 }
 
-// UPDATE APIs
-export type UpdateUserPayload = {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  role?: "admin" | "user";
-};
-
-export type UpdateUserResponse = {
-  id: string;
-  email: string;
-  role: string;
-  firstName: string;
-  lastName: string;
-  updatedAt: string;
-};
-
-export async function updateUser(userId: string, payload: UpdateUserPayload) {
-  const { data } = await api.put<UpdateUserResponse>(
-    `/auth/users/${userId}`,
-    payload
+export async function resetPassword(token: string, newPassword: string) {
+  const { data } = await api.post<{ success: boolean }>(
+    "/auth/reset-password",
+    { token, newPassword }
   );
-  return data;
-}
-
-export type UpdateProfilePayload = {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-};
-
-export type UpdateProfileResponse = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  updatedAt: string;
-};
-
-export async function updateProfile(payload: UpdateProfilePayload) {
-  const { data } = await api.put<UpdateProfileResponse>(
-    "/auth/profile",
-    payload
-  );
-  return data;
-}
-
-// DELETE APIs
-export type DeleteUserResponse = {
-  message: string;
-};
-
-export async function deleteUser(userId: string) {
-  const { data } = await api.delete<DeleteUserResponse>(
-    `/auth/users/${userId}`
-  );
-  return data;
-}
-
-export type DeactivateAccountResponse = {
-  message: string;
-};
-
-export async function deactivateAccount() {
-  const { data } = await api.delete<DeactivateAccountResponse>("/auth/account");
   return data;
 }

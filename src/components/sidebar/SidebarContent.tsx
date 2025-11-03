@@ -8,7 +8,6 @@ interface SidebarContentProps {
   isActiveRoute: (href: string) => boolean;
   onNavigate: (href: string) => void;
   onStoreSelect: (storeId: string) => void;
-  onLogout: () => void;
 }
 
 export function SidebarContent({
@@ -16,7 +15,6 @@ export function SidebarContent({
   isActiveRoute,
   onNavigate,
   onStoreSelect,
-  onLogout,
 }: SidebarContentProps) {
   return (
     <>
@@ -38,7 +36,7 @@ export function SidebarContent({
       </nav>
 
       {/* Footer */}
-      <SidebarFooter onLogout={onLogout} />
+      <SidebarFooter />
     </>
   );
 }

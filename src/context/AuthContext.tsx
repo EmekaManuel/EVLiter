@@ -17,6 +17,7 @@ import {
 } from "@/utils/token";
 
 import { UserRole } from "@/utils/roles";
+import * as authApi from "@/services/api/modules/auth";
 
 type AuthUser = {
   userId: string;
@@ -27,7 +28,7 @@ type AuthContextValue = {
   user: AuthUser;
   loading: boolean;
   login: (token: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasRole: (roles: string[]) => boolean;
 };
 
@@ -37,6 +38,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser>(null);
   const [loading, setLoading] = useState(true);
 
+  type DecodedPayload = {
+    userId?: string;
+    sub?: string;
+    role?: string;
+    exp?: number;
+  } | null;
+
   useEffect(() => {
     const token = getAccessToken();
     if (!token || tokenHasExpired(token)) {
@@ -45,9 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    const payload = decodeTokenPayload(token);
-    if (payload?.userId && payload?.role) {
-      setUser({ userId: payload.userId, role: payload.role });
+    const payload = decodeTokenPayload(token) as DecodedPayload;
+    const userId = payload?.userId ?? payload?.sub;
+    if (userId && payload?.role) {
+      setUser({ userId, role: payload.role });
     } else {
       setUser(null);
     }
@@ -56,17 +65,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback((token: string) => {
     setAccessToken(token);
-    const payload = decodeTokenPayload(token);
-    if (payload?.userId && payload?.role) {
-      setUser({ userId: payload.userId, role: payload.role });
+    const payload = decodeTokenPayload(token) as DecodedPayload;
+    const userId = payload?.userId ?? payload?.sub;
+    if (userId && payload?.role) {
+      setUser({ userId, role: payload.role });
     } else {
       setUser(null);
     }
   }, []);
 
-  const logout = useCallback(() => {
-    clearAccessToken();
-    setUser(null);
+  const logout = useCallback(async () => {
+    try {
+      // Call the logout API endpoint to revoke the refresh token
+      await authApi.logout();
+    } catch (error) {
+      // Even if the API call fails, clear local state
+      console.error("Logout API call failed:", error);
+    } finally {
+      // Always clear local token and user state
+      clearAccessToken();
+      setUser(null);
+    }
   }, []);
 
   const hasRole = useCallback(

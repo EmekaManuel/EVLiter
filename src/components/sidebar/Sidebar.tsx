@@ -6,14 +6,12 @@ interface SidebarProps {
   isActiveRoute: (href: string) => boolean;
   onNavigate: (href: string) => void;
   onStoreSelect: (storeId: string) => void;
-  onLogout: () => void;
 }
 
 export function Sidebar({
   isActiveRoute,
   onNavigate,
   onStoreSelect,
-  onLogout,
 }: SidebarProps) {
   const { sidebarOpen, handleClose } = useSidebar();
   const { navigationItems } = useNavigationItems();
@@ -39,7 +37,6 @@ export function Sidebar({
           isActiveRoute={isActiveRoute}
           onNavigate={onNavigate}
           onStoreSelect={onStoreSelect}
-          onLogout={onLogout}
         />
       </div>
     </>

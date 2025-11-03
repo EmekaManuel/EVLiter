@@ -14,7 +14,7 @@ import {
   signUpSchema,
   signUpSwitchFields,
 } from "@/lib/auth-forms";
-import { createUserToken } from "@/utils/simulateAuth";
+import * as authApi from "@/services/api/modules/auth";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -57,18 +57,11 @@ export default function AuthPage() {
 
   const onSubmitSignIn = async (data: SignInFormData) => {
     try {
-      console.log("Sign-in submitted:", data);
-
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Create a simulated JWT token for the user
-      const token = createUserToken(`user_${Date.now()}`);
-
-      // Login using the AuthContext
-      login(token);
-
-      // Redirect to customer portal
+      const res = await authApi.login({
+        email: data.email,
+        password: data.password,
+      });
+      login(res.accessToken);
       navigate("/dashboard/overview");
     } catch (error) {
       console.error("Sign-in error:", error);
@@ -77,19 +70,13 @@ export default function AuthPage() {
 
   const onSubmitSignUp = async (data: SignUpFormData) => {
     try {
-      console.log("Sign-up submitted:", data);
-
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Create a simulated JWT token for the new user
-      const token = createUserToken(`user_${Date.now()}`);
-
-      // Login using the AuthContext
-      login(token);
-
-      // Redirect to customer portal
-      navigate("/customer-portal");
+      const res = await authApi.register({
+        email: data.email,
+        password: data.password,
+        name: data.name,
+      });
+      login(res.accessToken);
+      navigate("/dashboard/overview");
     } catch (error) {
       console.error("Sign-up error:", error);
     }
@@ -97,10 +84,8 @@ export default function AuthPage() {
 
   const onSubmitForgotPassword = async (data: ForgotPasswordFormData) => {
     try {
-      console.log("Forgot password submitted:", data);
-      // Here you would typically make an API call
-      // await sendPasswordResetEmail(data.email);
-      alert("Password reset email sent! Check your inbox.");
+      await authApi.forgotPassword(data.email);
+      alert("Password reset requested. Check your inbox.");
       setAuthMode("signin");
     } catch (error) {
       console.error("Forgot password error:", error);

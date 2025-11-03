@@ -1,17 +1,23 @@
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
 import { LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-interface SidebarFooterProps {
-  onLogout: () => void;
-}
+export function SidebarFooter() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
-export function SidebarFooter({ onLogout }: SidebarFooterProps) {
+  const handleLogout = async () => {
+    await logout();
+    navigate("/auth/sign-in", { replace: true });
+  };
+
   return (
     <div className="p-4 border-t border-gray-100">
       <Button
         variant="ghost"
         className="w-full justify-start text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-light py-3"
-        onClick={onLogout}
+        onClick={handleLogout}
       >
         <LogOut className="w-4 h-4 mr-3 text-gray-400" />
         Logout
