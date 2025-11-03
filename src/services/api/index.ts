@@ -11,3 +11,4 @@ export * as classifiersApi from "./modules/classifiers";
 export * as pricingApi from "./modules/pricing";
 export * as activityApi from "./modules/activityLog";
 export * as companyApi from "./modules/company";
+export * as chargingStationsApi from "./modules/chargingStations";

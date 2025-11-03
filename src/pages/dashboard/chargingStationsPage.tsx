@@ -28,6 +28,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useEffect, useState, type SetStateAction } from "react";
+import { chargingStationsApi } from "@/services/api/modules/chargingStations";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -118,12 +119,18 @@ export default function ChargingStationsPage() {
   const loadNearbyStations = async (location: LocationData) => {
     setLoading(true);
     try {
-      // Your API call to fetch stations would go here
-      // For now, we'll just log it
-      console.log("Loading stations near:", location);
-
-      // Example: const response = await chargingStationService.getNearbyStations(location, 25, filters);
-      // setStations(response.data);
+      const connectorTypeParam =
+        (filters.connectorType && filters.connectorType[0]) || "All Types";
+      const resp = await chargingStationsApi.search({
+        location: searchQuery || "Lagos",
+        connectorType: (connectorTypeParam as any) || "All Types",
+        minPower: filters.minPower,
+        maxDistance: filters.maxDistance
+          ? filters.maxDistance * 1.60934
+          : undefined, // miles -> km
+        coordinates: { lat: location.latitude, lng: location.longitude },
+      });
+      setStations(resp.uiStations);
     } catch (error) {
       console.error("Failed to load charging stations:", error);
     } finally {
@@ -417,27 +424,6 @@ export default function ChargingStationsPage() {
                   )}
                 </Button>
               </div>
-
-              {/* Station List */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-4">
-                  Nearby Stations ({stations.length})
-                </h3>
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {stations.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      No stations found nearby
-                    </div>
-                  ) : (
-                    stations.map((station) =>
-                      renderStationInfo(
-                        station,
-                        selectedStation?.id === station.id
-                      )
-                    )
-                  )}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -456,18 +442,41 @@ export default function ChargingStationsPage() {
                   </div>
                 </div>
               ) : userLocation ? (
-                <MapComponent
-                  center={{
-                    lat: userLocation.latitude,
-                    lng: userLocation.longitude,
-                  }}
-                  zoom={12}
-                  markers={mapMarkers}
-                  directions={directions}
-                  onMapLoad={(
-                    mapInstance: SetStateAction<google.maps.Map | null>
-                  ) => setMap(mapInstance)}
-                />
+                <>
+                  <MapComponent
+                    center={{
+                      lat: userLocation.latitude,
+                      lng: userLocation.longitude,
+                    }}
+                    zoom={12}
+                    markers={mapMarkers}
+                    directions={directions}
+                    onMapLoad={(
+                      mapInstance: SetStateAction<google.maps.Map | null>
+                    ) => setMap(mapInstance)}
+                  />
+
+                  {/* Station List */}
+                  <div className="mt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-4">
+                      Nearby Stations ({stations.length})
+                    </h3>
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {stations.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          No stations found nearby
+                        </div>
+                      ) : (
+                        stations.map((station) =>
+                          renderStationInfo(
+                            station,
+                            selectedStation?.id === station.id
+                          )
+                        )
+                      )}
+                    </div>
+                  </div>
+                </>
               ) : (
                 <div className="h-96 w-full rounded-lg border border-gray-200 flex items-center justify-center bg-gray-50">
                   <div className="text-center">
