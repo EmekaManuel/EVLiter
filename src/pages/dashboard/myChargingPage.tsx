@@ -2,6 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StartChargingDialog } from "@/components/StartChargingDialog";
+import { StationInfoModal } from "@/components/StationInfoModal";
+import { MetricCard } from "@/components/metrics";
+import { SessionCard } from "@/components/sessions";
+import { PageHeader } from "@/components/layout";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   useChargingDashboard,
   useChargingSessions,
@@ -10,18 +16,10 @@ import {
   useEndChargingSession,
   useCompanyChargingStations,
 } from "@/services/hooks";
-import type {
-  ChargingSession,
-  LocationData,
-  ChargingStation,
-} from "@/types/ev";
+import type { LocationData, ChargingStation } from "@/types/ev";
 import { getUserLocation, getFallbackLocation } from "@/utils/getLocation";
-import { formatDuration, formatDate, formatTime } from "@/utils/formatting";
-import {
-  cleanStationName,
-  formatOperatingHours,
-  getStatusColor,
-} from "@/utils/charging";
+import { formatDuration } from "@/utils/formatting";
+import { cleanStationName, formatOperatingHours } from "@/utils/charging";
 import {
   Battery,
   Clock,
@@ -43,6 +41,7 @@ export default function MyChargingPage() {
   >("recent");
   const [realTimeDuration, setRealTimeDuration] = useState<number>(0);
   const [showStartDialog, setShowStartDialog] = useState(false);
+  const [showStationModal, setShowStationModal] = useState(false);
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
 
   // React Query hooks
@@ -220,143 +219,13 @@ export default function MyChargingPage() {
     }
   };
 
-  const renderStatCard = (
-    icon: React.ReactNode,
-    label: string,
-    value: string,
-    subtitle?: string
-  ) => (
-    <div className="p-6 border border-gray-200 rounded-lg">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-gray-100 rounded-lg">{icon}</div>
-        <div>
-          <p className="text-2xl font-light text-gray-900">{value}</p>
-          <p className="text-sm text-gray-500">{label}</p>
-          {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSessionCard = (session: ChargingSession) => (
-    <div key={session.id} className="p-4 border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            <h4 className="font-medium text-gray-900">
-              {session.station?.name || cleanStationName(session.stationName)}
-            </h4>
-            <span
-              className={`text-xs px-2 py-1 rounded-full border shrink-0 ${getStatusColor(
-                session.status
-              )}`}
-            >
-              {session.status}
-            </span>
-          </div>
-          {session.station?.address && (
-            <p className="text-sm text-gray-500 flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-              <span className="truncate">{session.station.address}</span>
-            </p>
-          )}
-        </div>
-        <div className="text-right shrink-0 ml-4">
-          <p className="text-sm font-medium text-gray-900">
-            ${session.totalCost.toFixed(2)}
-          </p>
-          <p className="text-xs text-gray-500">
-            {formatDate(session.startTime)}
-          </p>
-          {session.station?.pricePerKWh && (
-            <p className="text-xs text-gray-500 mt-1">
-              ${session.station.pricePerKWh}/kWh
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-        <div className="flex items-center space-x-2">
-          <Clock className="h-4 w-4 text-gray-400" />
-          <span>{formatDuration(session.duration)}</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Battery className="h-4 w-4 text-gray-400" />
-          <span>{session.energyDelivered.toFixed(1)} kWh</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Zap className="h-4 w-4 text-gray-400" />
-          <span>{session.averagePower} kW</span>
-        </div>
-        {session.stationRating && (
-          <div className="flex items-center space-x-2">
-            <Star className="h-4 w-4 text-gray-400" />
-            <span>{session.stationRating}/5</span>
-          </div>
-        )}
-      </div>
-
-      {/* Station Details */}
-      {session.station && (
-        <div className="mb-3 pt-3 border-t border-gray-100 space-y-2">
-          {(session.station.amenities &&
-            session.station.amenities.length > 0) ||
-          (session.station.connectorTypes &&
-            session.station.connectorTypes.length > 0) ||
-          session.station.operatingHours ||
-          session.station.powerOutput ? (
-            <div className="flex flex-wrap gap-2 text-xs">
-              {session.station.operatingHours && (
-                <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                  {session.station.operatingHours}
-                </span>
-              )}
-              {session.station.powerOutput && (
-                <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                  {session.station.powerOutput} kW
-                </span>
-              )}
-              {session.station.amenities &&
-                session.station.amenities.length > 0 && (
-                  <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                    {session.station.amenities.length} amenities
-                  </span>
-                )}
-              {session.station.connectorTypes &&
-                session.station.connectorTypes.length > 0 && (
-                  <span className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-blue-700">
-                    {session.station.connectorTypes.join(", ")}
-                  </span>
-                )}
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      <div className="pt-3 border-t border-gray-100">
-        <p className="text-xs text-gray-500">
-          {formatTime(session.startTime)}
-          {session.endTime ? ` - ${formatTime(session.endTime)}` : " - Active"}
-        </p>
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center space-x-3">
-            <Zap className="h-6 w-6 text-gray-400" />
-            <h1 className="text-2xl font-light text-gray-900">My Charging</h1>
-          </div>
-          <p className="text-gray-500 font-light mt-2">
-            Track your charging sessions and energy usage
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Zap}
+        title="My Charging"
+        description="Track your charging sessions and energy usage"
+      />
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="space-y-8">
@@ -367,30 +236,30 @@ export default function MyChargingPage() {
                 Overview
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {renderStatCard(
-                  <Zap className="h-5 w-5 text-gray-600" />,
-                  "Total Sessions",
-                  userStats.totalSessions.toString(),
-                  "This month"
-                )}
-                {renderStatCard(
-                  <Battery className="h-5 w-5 text-gray-600" />,
-                  "Energy Used",
-                  `${userStats.totalEnergyUsed.toFixed(1)} kWh`,
-                  "Lifetime"
-                )}
-                {renderStatCard(
-                  <DollarSign className="h-5 w-5 text-gray-600" />,
-                  "Total Spent",
-                  `$${userStats.totalSpent.toFixed(2)}`,
-                  "This month"
-                )}
-                {renderStatCard(
-                  <Clock className="h-5 w-5 text-gray-600" />,
-                  "Avg Duration",
-                  formatDuration(userStats.averageSessionDuration),
-                  "Per session"
-                )}
+                <MetricCard
+                  icon={<Zap className="h-5 w-5 text-gray-600" />}
+                  label="Total Sessions"
+                  value={userStats.totalSessions.toString()}
+                  subtitle="This month"
+                />
+                <MetricCard
+                  icon={<Battery className="h-5 w-5 text-gray-600" />}
+                  label="Energy Used"
+                  value={`${userStats.totalEnergyUsed.toFixed(1)} kWh`}
+                  subtitle="Lifetime"
+                />
+                <MetricCard
+                  icon={<DollarSign className="h-5 w-5 text-gray-600" />}
+                  label="Total Spent"
+                  value={`$${userStats.totalSpent.toFixed(2)}`}
+                  subtitle="This month"
+                />
+                <MetricCard
+                  icon={<Clock className="h-5 w-5 text-gray-600" />}
+                  label="Avg Duration"
+                  value={formatDuration(userStats.averageSessionDuration)}
+                  subtitle="Per session"
+                />
               </div>
             </div>
           )}
@@ -638,7 +507,11 @@ export default function MyChargingPage() {
                     <StopCircle className="h-4 w-4 mr-2" />
                     Stop Charging
                   </Button>
-                  <Button variant="outline" className="flex-1 border-gray-200">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-gray-200"
+                    onClick={() => setShowStationModal(true)}
+                  >
                     <MapPin className="h-4 w-4 mr-2" />
                     View Station
                   </Button>
@@ -695,11 +568,16 @@ export default function MyChargingPage() {
               <TabsContent value="recent" className="mt-6">
                 <div className="space-y-3">
                   {loading ? (
-                    <p className="text-sm text-gray-500">Loading...</p>
+                    <LoadingState message="Loading sessions..." />
                   ) : sessions.length === 0 ? (
-                    <p className="text-sm text-gray-500">No recent sessions</p>
+                    <EmptyState
+                      title="No recent sessions"
+                      description="Your charging history will appear here"
+                    />
                   ) : (
-                    sessions.map(renderSessionCard)
+                    sessions.map((session) => (
+                      <SessionCard key={session.id} session={session} />
+                    ))
                   )}
                 </div>
               </TabsContent>
@@ -707,13 +585,16 @@ export default function MyChargingPage() {
               <TabsContent value="this-month" className="mt-6">
                 <div className="space-y-3">
                   {loading ? (
-                    <p className="text-sm text-gray-500">Loading...</p>
+                    <LoadingState message="Loading sessions..." />
                   ) : sessions.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      No sessions this month
-                    </p>
+                    <EmptyState
+                      title="No sessions this month"
+                      description="Start a charging session to see it here"
+                    />
                   ) : (
-                    sessions.map(renderSessionCard)
+                    sessions.map((session) => (
+                      <SessionCard key={session.id} session={session} />
+                    ))
                   )}
                 </div>
               </TabsContent>
@@ -721,11 +602,16 @@ export default function MyChargingPage() {
               <TabsContent value="all-time" className="mt-6">
                 <div className="space-y-3">
                   {loading ? (
-                    <p className="text-sm text-gray-500">Loading...</p>
+                    <LoadingState message="Loading sessions..." />
                   ) : sessions.length === 0 ? (
-                    <p className="text-sm text-gray-500">No sessions found</p>
+                    <EmptyState
+                      title="No sessions found"
+                      description="Your charging history will appear here"
+                    />
                   ) : (
-                    sessions.map(renderSessionCard)
+                    sessions.map((session) => (
+                      <SessionCard key={session.id} session={session} />
+                    ))
                   )}
                 </div>
               </TabsContent>
@@ -746,6 +632,17 @@ export default function MyChargingPage() {
         onOpenChange={setShowStartDialog}
         onStartCharging={handleStartCharging}
         userLocation={userLocation || undefined}
+      />
+
+      {/* Station Info Modal */}
+      <StationInfoModal
+        open={showStationModal}
+        onOpenChange={setShowStationModal}
+        station={
+          currentSession?.station
+            ? (currentSession.station as unknown as ChargingStation)
+            : null
+        }
       />
     </div>
   );
