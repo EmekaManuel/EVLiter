@@ -4,14 +4,25 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CarInfo, ConnectorType } from "@/types/ev";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Battery, Car, MapPin, Zap, Loader2 } from "lucide-react";
-import { useState } from "react";
+import {
+  Battery,
+  Car,
+  MapPin,
+  Zap,
+  Loader2,
+  Clock,
+  History,
+  CheckCircle,
+} from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   recognizeCarByVIN,
   recognizeCarByModel,
+  getUserRecognitions,
   type CarRecognitionResponse,
+  type CarRecognitionHistory,
 } from "@/services/api/modules/carRecognition";
 import { useCarInfoStore } from "@/store/carInfoStore";
 
@@ -86,6 +97,11 @@ export default function AiCarRecognitionPage() {
   const [carInfo, setCarInfo] = useState<CarRecognitionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recognitionHistory, setRecognitionHistory] = useState<
+    CarRecognitionHistory[]
+  >([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const vinForm = useForm<VinFormData>({
     resolver: zodResolver(vinSchema),
@@ -94,6 +110,30 @@ export default function AiCarRecognitionPage() {
   const modelForm = useForm<ModelFormData>({
     resolver: zodResolver(modelSchema),
   });
+
+  // Load recognition history
+  const loadRecognitionHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const response = await getUserRecognitions({ limit: 20, offset: 0 });
+      setRecognitionHistory(response.recognitions);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to load recognition history";
+      setHistoryError(message);
+      console.error("Error loading recognition history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  // Load history on mount
+  useEffect(() => {
+    loadRecognitionHistory();
+  }, [loadRecognitionHistory]);
 
   const handleVinSubmit = async (data: VinFormData) => {
     setLoading(true);
@@ -105,6 +145,8 @@ export default function AiCarRecognitionPage() {
       // Save to Zustand store
       const carInfoData = convertToCarInfo(result);
       saveCarInfo(carInfoData);
+      // Refresh history
+      await loadRecognitionHistory();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to recognize car by VIN";
@@ -130,6 +172,8 @@ export default function AiCarRecognitionPage() {
       // Save to Zustand store
       const carInfoData = convertToCarInfo(result);
       saveCarInfo(carInfoData);
+      // Refresh history
+      await loadRecognitionHistory();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to recognize car by model";
@@ -139,6 +183,22 @@ export default function AiCarRecognitionPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatDateTime = (date: string) => {
+    return new Date(date).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const handleSelectRecognition = (recognition: CarRecognitionHistory) => {
+    setCarInfo(recognition);
+    const carInfoData = convertToCarInfo(recognition);
+    saveCarInfo(carInfoData);
   };
 
   return (
@@ -488,6 +548,150 @@ export default function AiCarRecognitionPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Recognition History Section */}
+        <div className="mt-12">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <History className="h-5 w-5 text-gray-400" />
+              <h2 className="text-lg font-medium text-gray-900">
+                Recognition History
+              </h2>
+            </div>
+            <Button
+              variant="outline"
+              onClick={loadRecognitionHistory}
+              disabled={loadingHistory}
+              className="text-sm"
+            >
+              {loadingHistory ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                "Refresh"
+              )}
+            </Button>
+          </div>
+
+          {historyError && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{historyError}</p>
+            </div>
+          )}
+
+          {loadingHistory ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin text-gray-400" />
+              <p className="text-sm text-gray-500">Loading history...</p>
+            </div>
+          ) : recognitionHistory.length === 0 ? (
+            <div className="text-center py-12 border border-gray-200 rounded-lg bg-gray-50">
+              <History className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-gray-500 font-light">
+                No recognition history yet
+              </p>
+              <p className="text-sm text-gray-400 mt-2">
+                Your recognized vehicles will appear here
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {recognitionHistory.map((recognition) => {
+                const isSelected =
+                  carInfo?.vin === recognition.vin &&
+                  carInfo?.make === recognition.make &&
+                  carInfo?.model === recognition.model &&
+                  carInfo?.year === recognition.year;
+
+                return (
+                  <div
+                    key={recognition.id}
+                    onClick={() => handleSelectRecognition(recognition)}
+                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? "border-gray-900 bg-gray-50"
+                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold text-gray-900">
+                            {recognition.year} {recognition.make}{" "}
+                            {recognition.model}
+                          </h4>
+                          {isSelected && (
+                            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                          )}
+                          {recognition.method && (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${
+                                recognition.method === "vin"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-purple-50 text-purple-700 border-purple-200"
+                              }`}
+                            >
+                              {recognition.method.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        {recognition.trim && (
+                          <p className="text-sm text-gray-600 mb-1">
+                            {recognition.trim}
+                          </p>
+                        )}
+                        {recognition.vin && (
+                          <p className="text-xs text-gray-500 mb-2 font-mono">
+                            VIN: {recognition.vin}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>{formatDateTime(recognition.createdAt)}</span>
+                          </div>
+                          {recognition.charging?.capacityKWh && (
+                            <div className="flex items-center gap-1">
+                              <Battery className="h-3.5 w-3.5" />
+                              <span>
+                                {recognition.charging.capacityKWh} kWh
+                              </span>
+                            </div>
+                          )}
+                          {recognition.charging?.dcMaxKw && (
+                            <div className="flex items-center gap-1">
+                              <Zap className="h-3.5 w-3.5" />
+                              <span>{recognition.charging.dcMaxKw} kW DC</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">
+                              {(recognition.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {recognition.imageUrl && (
+                        <div className="ml-4 shrink-0">
+                          <img
+                            src={recognition.imageUrl}
+                            alt={`${recognition.make} ${recognition.model}`}
+                            className="w-20 h-20 object-cover rounded border border-gray-200"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

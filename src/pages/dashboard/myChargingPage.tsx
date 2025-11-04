@@ -20,6 +20,9 @@ import {
   Star,
   StopCircle,
   Zap,
+  TrendingUp,
+  Gauge,
+  Activity,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -331,110 +334,214 @@ export default function MyChargingPage() {
     </div>
   );
 
-  const renderSessionCard = (session: ChargingSession) => (
-    <div key={session.id} className="p-4 border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            <h4 className="font-medium text-gray-900">
-              {session.station?.name || cleanStationName(session.stationName)}
-            </h4>
-            <span
-              className={`text-xs px-2 py-1 rounded-full border shrink-0 ${getStatusColor(
-                session.status
-              )}`}
-            >
-              {session.status}
-            </span>
-          </div>
-          {session.station?.address && (
-            <p className="text-sm text-gray-500 flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-              <span className="truncate">{session.station.address}</span>
-            </p>
-          )}
-        </div>
-        <div className="text-right shrink-0 ml-4">
-          <p className="text-sm font-medium text-gray-900">
-            ${session.totalCost.toFixed(2)}
-          </p>
-          <p className="text-xs text-gray-500">
-            {formatDate(session.startTime)}
-          </p>
-          {session.station?.pricePerKWh && (
-            <p className="text-xs text-gray-500 mt-1">
-              ${session.station.pricePerKWh}/kWh
-            </p>
-          )}
-        </div>
-      </div>
+  const renderSessionCard = (session: ChargingSession) => {
+    const batteryChange =
+      session.batteryLevelStart !== undefined
+        ? session.batteryLevel - session.batteryLevelStart
+        : null;
+    const efficiency =
+      session.duration > 0
+        ? (session.energyDelivered / (session.duration / 60)).toFixed(2)
+        : "0.00";
+    const costPerHour =
+      session.duration > 0
+        ? ((session.totalCost / session.duration) * 60).toFixed(2)
+        : "0.00";
+    const costPerKwh =
+      session.energyDelivered > 0
+        ? (session.totalCost / session.energyDelivered).toFixed(2)
+        : "0.00";
 
-      <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-        <div className="flex items-center space-x-2">
-          <Clock className="h-4 w-4 text-gray-400" />
-          <span>{formatDuration(session.duration)}</span>
+    return (
+      <div
+        key={session.id}
+        className="p-5 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center space-x-2 mb-2">
+              <h4 className="font-semibold text-gray-900">
+                {session.station?.name || cleanStationName(session.stationName)}
+              </h4>
+              <span
+                className={`text-xs px-2 py-1 rounded-full border shrink-0 font-medium ${getStatusColor(
+                  session.status
+                )}`}
+              >
+                {session.status}
+              </span>
+            </div>
+            {session.station?.address && (
+              <p className="text-sm text-gray-500 flex items-center gap-1.5 mb-2">
+                <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <span className="truncate">{session.station.address}</span>
+              </p>
+            )}
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span>{formatDate(session.startTime)}</span>
+              <span>•</span>
+              <span>
+                {formatTime(session.startTime)}
+                {session.endTime ? ` - ${formatTime(session.endTime)}` : ""}
+              </span>
+            </div>
+          </div>
+          <div className="text-right shrink-0 ml-4">
+            <p className="text-lg font-semibold text-gray-900">
+              ${session.totalCost.toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500">${costPerKwh}/kWh</p>
+            {session.station?.pricePerKWh && (
+              <p className="text-xs text-gray-400 mt-1">
+                Rate: ${session.station.pricePerKWh}/kWh
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <Battery className="h-4 w-4 text-gray-400" />
-          <span>{session.energyDelivered.toFixed(1)} kWh</span>
+
+        {/* Primary Metrics Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="h-3.5 w-3.5 text-gray-400" />
+              <p className="text-xs font-medium text-gray-500">Duration</p>
+            </div>
+            <p className="text-base font-semibold text-gray-900">
+              {formatDuration(session.duration)}
+            </p>
+          </div>
+          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Battery className="h-3.5 w-3.5 text-gray-400" />
+              <p className="text-xs font-medium text-gray-500">Energy</p>
+            </div>
+            <p className="text-base font-semibold text-gray-900">
+              {session.energyDelivered.toFixed(2)} kWh
+            </p>
+          </div>
+          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className="h-3.5 w-3.5 text-gray-400" />
+              <p className="text-xs font-medium text-gray-500">Avg Power</p>
+            </div>
+            <p className="text-base font-semibold text-gray-900">
+              {session.averagePower.toFixed(1)} kW
+            </p>
+          </div>
+          {session.stationRating ? (
+            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 mb-1">
+                <Star className="h-3.5 w-3.5 text-gray-400" />
+                <p className="text-xs font-medium text-gray-500">Rating</p>
+              </div>
+              <p className="text-base font-semibold text-gray-900">
+                {session.stationRating}/5
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-3.5 w-3.5 text-gray-400" />
+                <p className="text-xs font-medium text-gray-500">Efficiency</p>
+              </div>
+              <p className="text-base font-semibold text-gray-900">
+                {efficiency} kWh/h
+              </p>
+            </div>
+          )}
         </div>
-        <div className="flex items-center space-x-2">
-          <Zap className="h-4 w-4 text-gray-400" />
-          <span>{session.averagePower} kW</span>
+
+        {/* Battery Level Info */}
+        {(session.batteryLevelStart !== undefined ||
+          batteryChange !== null) && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                {session.batteryLevelStart !== undefined && (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Start Level</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {session.batteryLevelStart}%
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">End Level</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {session.batteryLevel}%
+                  </p>
+                </div>
+                {batteryChange !== null && batteryChange > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Gained</p>
+                    <p className="text-sm font-semibold text-green-600 flex items-center gap-1">
+                      <TrendingUp className="h-3.5 w-3.5" />+
+                      {batteryChange.toFixed(1)}%
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-600 mb-1">Cost Efficiency</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  ${costPerHour}/hour
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Additional Details */}
+        <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
+          <div className="flex items-center gap-2 text-gray-600">
+            <Activity className="h-3.5 w-3.5 text-gray-400" />
+            <span>Efficiency: {efficiency} kWh/h</span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <Gauge className="h-3.5 w-3.5 text-gray-400" />
+            <span>Cost Rate: ${costPerHour}/hour</span>
+          </div>
         </div>
-        {session.stationRating && (
-          <div className="flex items-center space-x-2">
-            <Star className="h-4 w-4 text-gray-400" />
-            <span>{session.stationRating}/5</span>
+
+        {/* Station Details */}
+        {session.station && (
+          <div className="mb-4 pt-4 border-t border-gray-200 space-y-3">
+            {(session.station.amenities &&
+              session.station.amenities.length > 0) ||
+            (session.station.connectorTypes &&
+              session.station.connectorTypes.length > 0) ||
+            session.station.operatingHours ||
+            session.station.powerOutput ? (
+              <div className="flex flex-wrap gap-2 text-xs">
+                {session.station.operatingHours && (
+                  <span className="px-2.5 py-1 bg-gray-100 rounded-md text-gray-700 font-medium">
+                    {session.station.operatingHours}
+                  </span>
+                )}
+                {session.station.powerOutput && (
+                  <span className="px-2.5 py-1 bg-gray-100 rounded-md text-gray-700 font-medium">
+                    {session.station.powerOutput} kW max
+                  </span>
+                )}
+                {session.station.amenities &&
+                  session.station.amenities.length > 0 && (
+                    <span className="px-2.5 py-1 bg-gray-100 rounded-md text-gray-700 font-medium">
+                      {session.station.amenities.length} amenities
+                    </span>
+                  )}
+                {session.station.connectorTypes &&
+                  session.station.connectorTypes.length > 0 && (
+                    <span className="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-md text-blue-700 font-medium">
+                      {session.station.connectorTypes.join(", ")}
+                    </span>
+                  )}
+              </div>
+            ) : null}
           </div>
         )}
       </div>
-
-      {/* Station Details */}
-      {session.station && (
-        <div className="mb-3 pt-3 border-t border-gray-100 space-y-2">
-          {(session.station.amenities &&
-            session.station.amenities.length > 0) ||
-          (session.station.connectorTypes &&
-            session.station.connectorTypes.length > 0) ||
-          session.station.operatingHours ||
-          session.station.powerOutput ? (
-            <div className="flex flex-wrap gap-2 text-xs">
-              {session.station.operatingHours && (
-                <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                  {session.station.operatingHours}
-                </span>
-              )}
-              {session.station.powerOutput && (
-                <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                  {session.station.powerOutput} kW
-                </span>
-              )}
-              {session.station.amenities &&
-                session.station.amenities.length > 0 && (
-                  <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
-                    {session.station.amenities.length} amenities
-                  </span>
-                )}
-              {session.station.connectorTypes &&
-                session.station.connectorTypes.length > 0 && (
-                  <span className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-blue-700">
-                    {session.station.connectorTypes.join(", ")}
-                  </span>
-                )}
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      <div className="pt-3 border-t border-gray-100">
-        <p className="text-xs text-gray-500">
-          {formatTime(session.startTime)}
-          {session.endTime ? ` - ${formatTime(session.endTime)}` : " - Active"}
-        </p>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -600,10 +707,30 @@ export default function MyChargingPage() {
               )}
 
               <div className="space-y-4">
+                {/* Battery Level with Start/End Comparison */}
                 <div>
-                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <div className="flex justify-between items-center text-sm text-gray-600 mb-2">
                     <span>Battery Level</span>
-                    <span>{currentSession.batteryLevel}%</span>
+                    <div className="flex items-center gap-3">
+                      {currentSession.batteryLevelStart !== undefined && (
+                        <span className="text-xs text-gray-500">
+                          Start: {currentSession.batteryLevelStart}%
+                        </span>
+                      )}
+                      <span className="font-medium text-gray-900">
+                        {currentSession.batteryLevel}%
+                      </span>
+                      {currentSession.batteryLevelStart !== undefined && (
+                        <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                          <TrendingUp className="h-3 w-3" />+
+                          {(
+                            currentSession.batteryLevel -
+                            currentSession.batteryLevelStart
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <Progress
                     value={currentSession.batteryLevel}
@@ -611,33 +738,96 @@ export default function MyChargingPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <p className="text-lg font-light text-gray-900">
+                {/* Detailed Charging Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="h-3.5 w-3.5 text-gray-400" />
+                      <p className="text-xs text-gray-500">Duration</p>
+                    </div>
+                    <p className="text-lg font-semibold text-gray-900">
                       {formatDuration(
                         realTimeDuration > 0
                           ? realTimeDuration
                           : currentSession.duration
                       )}
                     </p>
-                    <p className="text-xs text-gray-500">Duration</p>
                   </div>
-                  <div>
-                    <p className="text-lg font-light text-gray-900">
+                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Zap className="h-3.5 w-3.5 text-gray-400" />
+                      <p className="text-xs text-gray-500">Power</p>
+                    </div>
+                    <p className="text-lg font-semibold text-gray-900">
                       {currentSession.averagePower > 0
                         ? `${currentSession.averagePower.toFixed(1)} kW`
                         : "0.0 kW"}
                     </p>
-                    <p className="text-xs text-gray-500">Power</p>
                   </div>
-                  <div>
-                    <p className="text-lg font-light text-gray-900">
-                      {currentSession.stationRating
-                        ? `${currentSession.stationRating}/5`
-                        : "N/A"}
+                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Battery className="h-3.5 w-3.5 text-gray-400" />
+                      <p className="text-xs text-gray-500">Energy</p>
+                    </div>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {currentSession.energyDelivered.toFixed(2)} kWh
                     </p>
-                    <p className="text-xs text-gray-500">Rating</p>
                   </div>
+                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <DollarSign className="h-3.5 w-3.5 text-gray-400" />
+                      <p className="text-xs text-gray-500">Cost</p>
+                    </div>
+                    <p className="text-lg font-semibold text-gray-900">
+                      ${currentSession.totalCost.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Additional Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <Activity className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Efficiency</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {currentSession.duration > 0
+                          ? (
+                              currentSession.energyDelivered /
+                              (currentSession.duration / 60)
+                            ).toFixed(2)
+                          : "0.00"}{" "}
+                        kWh/h
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Gauge className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Cost Rate</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {currentSession.duration > 0
+                          ? (
+                              (currentSession.totalCost /
+                                currentSession.duration) *
+                              60
+                            ).toFixed(2)
+                          : "0.00"}{" "}
+                        $/hour
+                      </p>
+                    </div>
+                  </div>
+                  {currentSession.stationRating && (
+                    <div className="flex items-center gap-3">
+                      <Star className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-xs text-gray-500">Station Rating</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {currentSession.stationRating}/5
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex space-x-3">

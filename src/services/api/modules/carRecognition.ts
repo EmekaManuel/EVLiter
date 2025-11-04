@@ -34,6 +34,22 @@ export type CarRecognitionResponse = {
   sources?: string[];
 };
 
+export type CarRecognitionHistory = CarRecognitionResponse & {
+  id: string;
+  createdAt: string;
+  method?: "vin" | "model";
+};
+
+export type GetUserRecognitionsParams = {
+  limit?: number;
+  offset?: number;
+};
+
+export type GetUserRecognitionsResponse = {
+  recognitions: CarRecognitionHistory[];
+  count: number;
+};
+
 // API Functions
 export async function recognizeCarByVIN(
   payload: RecognizeCarByVINPayload
@@ -55,8 +71,22 @@ export async function recognizeCarByModel(
   return data;
 }
 
+/**
+ * Get user's recognition history
+ */
+export async function getUserRecognitions(
+  params?: GetUserRecognitionsParams
+): Promise<GetUserRecognitionsResponse> {
+  const { data } = await api.get<GetUserRecognitionsResponse>(
+    "/ai/car-recognition",
+    { params }
+  );
+  return data;
+}
+
 // Optional: Create a combined service object
 export const carRecognitionService = {
   recognizeByVIN: recognizeCarByVIN,
   recognizeByModel: recognizeCarByModel,
+  getUserRecognitions,
 };
