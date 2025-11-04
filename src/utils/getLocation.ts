@@ -7,23 +7,46 @@ interface GeolocationOptions {
 }
 
 /**
+ * Default fallback location (Lagos, Nigeria - Victoria Island)
+ * Used when user's location cannot be determined
+ */
+export const FALLBACK_LOCATION: LocationData = {
+  latitude: 6.4281, // Victoria Island, Lagos
+  longitude: 3.4219,
+};
+
+/**
+ * Gets a fallback location when user location is unavailable
+ * @returns Default location (Lagos, Nigeria)
+ */
+export function getFallbackLocation(): LocationData {
+  return FALLBACK_LOCATION;
+}
+
+/**
  * Gets the user's current location using the browser's Geolocation API
  * @param options - Optional configuration for geolocation
+ * @param useFallback - If true, returns fallback location instead of throwing error when location is unavailable
  * @returns Promise with LocationData containing latitude and longitude
- * @throws Error if geolocation is not supported or permission is denied
+ * @throws Error if geolocation is not supported or permission is denied (unless useFallback is true)
  */
 export async function getUserLocation(
-  options: GeolocationOptions = {}
+  options: GeolocationOptions = {},
+  useFallback: boolean = false
 ): Promise<LocationData> {
   // Check if geolocation is supported
   if (!navigator.geolocation) {
+    if (useFallback) {
+      console.warn("Geolocation not supported, using fallback location");
+      return FALLBACK_LOCATION;
+    }
     throw new Error("Geolocation is not supported by your browser");
   }
 
   const defaultOptions: PositionOptions = {
-    enableHighAccuracy: true,
-    timeout: 10000, // 10 seconds
-    maximumAge: 0, // Don't use cached position
+    enableHighAccuracy: false, // Set to false for better compatibility, especially on macOS
+    timeout: 15000, // Increased to 15 seconds to give more time
+    maximumAge: 60000, // Allow cached position up to 1 minute old
     ...options,
   };
 
@@ -46,11 +69,31 @@ export async function getUserLocation(
             break;
           case error.POSITION_UNAVAILABLE:
             errorMessage =
-              "Location information is unavailable. Please try again.";
+              "Location information is unavailable. This may be due to:\n" +
+              "- Location services being disabled on your device\n" +
+              "- Poor GPS/Wi-Fi signal\n" +
+              "- Browser location restrictions\n\n" +
+              "The app will continue to work, but location-based features may be limited.";
             break;
           case error.TIMEOUT:
             errorMessage = "Location request timed out. Please try again.";
             break;
+          default:
+            errorMessage =
+              "Unable to determine your location. The app will continue to work normally.";
+        }
+
+        // Log the actual error code for debugging
+        console.warn("Geolocation error:", {
+          code: error.code,
+          message: error.message,
+        });
+
+        // If fallback is enabled, return fallback location instead of rejecting
+        if (useFallback) {
+          console.info("Using fallback location:", FALLBACK_LOCATION);
+          resolve(FALLBACK_LOCATION);
+          return;
         }
 
         reject(new Error(errorMessage));

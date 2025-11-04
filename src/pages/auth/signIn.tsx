@@ -15,6 +15,7 @@ import {
   signUpSwitchFields,
 } from "@/lib/auth-forms";
 import * as authApi from "@/services/api/modules/auth";
+import { setAccessToken, setRefreshToken } from "@/utils/token";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -61,6 +62,9 @@ export default function AuthPage() {
         email: data.email,
         password: data.password,
       });
+      // Store both access and refresh tokens
+      setAccessToken(res.accessToken);
+      setRefreshToken(res.refreshToken);
       login(res.accessToken);
       navigate("/dashboard/overview");
     } catch (error) {
@@ -75,6 +79,9 @@ export default function AuthPage() {
         password: data.password,
         name: data.name,
       });
+      // Store both access and refresh tokens
+      setAccessToken(res.accessToken);
+      setRefreshToken(res.refreshToken);
       login(res.accessToken);
       navigate("/dashboard/overview");
     } catch (error) {

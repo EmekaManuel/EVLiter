@@ -10,6 +10,7 @@ import {
 
 import {
   clearAccessToken,
+  clearAllTokens,
   decodeTokenPayload,
   getAccessToken,
   setAccessToken,
@@ -82,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Even if the API call fails, clear local state
       console.error("Logout API call failed:", error);
     } finally {
-      // Always clear local token and user state
-      clearAccessToken();
+      // Always clear local tokens and user state
+      clearAllTokens();
       setUser(null);
     }
   }, []);

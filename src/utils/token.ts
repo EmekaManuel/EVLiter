@@ -5,6 +5,7 @@ export type AuthTokenPayload = {
 };
 
 const ACCESS_TOKEN_KEY = "gp_access_token";
+const REFRESH_TOKEN_KEY = "gp_refresh_token";
 
 export function getAccessToken(): string | null {
   try {
@@ -28,6 +29,35 @@ export function clearAccessToken(): void {
   } catch {
     // ignore
   }
+}
+
+export function getRefreshToken(): string | null {
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setRefreshToken(token: string): void {
+  try {
+    localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  } catch {
+    // ignore
+  }
+}
+
+export function clearRefreshToken(): void {
+  try {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function clearAllTokens(): void {
+  clearAccessToken();
+  clearRefreshToken();
 }
 
 export function isAuthenticated(): boolean {

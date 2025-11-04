@@ -109,6 +109,20 @@ export interface ChargingSession {
   batteryLevelStart?: number; // percentage
   status: "active" | "completed" | "cancelled";
   stationRating?: number;
+  station?: {
+    id: string;
+    name: string;
+    address: string;
+    amenities?: string[];
+    connectorTypes?: string[];
+    distance?: number;
+    isCompanyStation?: boolean;
+    location?: { lat: number; lng: number };
+    operatingHours?: string;
+    powerOutput?: number;
+    pricePerKWh?: number;
+    realtimeAvailability?: string;
+  };
 }
 
 export interface UserStats {

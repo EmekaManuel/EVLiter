@@ -4,8 +4,23 @@ import type { ChargingSession, UserStats } from "@/types/ev";
 // Request/Response types matching the backend schemas
 export type StartChargingSessionPayload = {
   stationId: string;
-  connectorId: string;
+  connectorId: string; // The connector ID (e.g., "station-002-c2")
+  connectorType?: string; // The connector type (e.g., "CCS") - optional for backward compatibility
   batteryLevelStart: number;
+  station: {
+    id: string;
+    name: string;
+    address: string;
+    location: { lat: number; lng: number };
+    connectorTypes: string[];
+    powerOutput: number;
+    realtimeAvailability: "Available" | "Occupied" | "Out of Service";
+    isCompanyStation: boolean;
+    distance?: number;
+    amenities?: string[];
+    operatingHours?: string;
+    pricePerKWh?: number;
+  };
 };
 
 export type EndChargingSessionPayload = {

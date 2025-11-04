@@ -41,7 +41,22 @@ interface StartChargingDialogProps {
   onStartCharging: (data: {
     stationId: string;
     connectorId: string;
+    connectorType?: string; // Optional connector type for backend validation
     batteryLevelStart: number;
+    station?: {
+      id: string;
+      name: string;
+      address: string;
+      location: { lat: number; lng: number };
+      connectorTypes: string[];
+      powerOutput: number;
+      realtimeAvailability: "Available" | "Occupied" | "Out of Service";
+      isCompanyStation: boolean;
+      distance?: number;
+      amenities?: string[];
+      operatingHours?: string;
+      pricePerKWh?: number;
+    };
   }) => Promise<void>;
   userLocation?: { latitude: number; longitude: number };
 }
@@ -195,10 +210,74 @@ export function StartChargingDialog({
   const onSubmit = async (data: StartChargingFormData) => {
     try {
       setSubmitError(null);
+
+      if (!selectedStation) {
+        setSubmitError("Please select a charging station");
+        return;
+      }
+
+      // Find the selected connector to get its type
+      const selectedConnector = selectedStation.connectors.find(
+        (c) => c.id === data.connectorId
+      );
+
+      if (!selectedConnector) {
+        setSubmitError("Selected connector not found");
+        return;
+      }
+
+      // Convert selected station to backend format
+      const stationForBackend: {
+        id: string;
+        name: string;
+        address: string;
+        location: { lat: number; lng: number };
+        connectorTypes: string[];
+        powerOutput: number;
+        realtimeAvailability: "Available" | "Occupied" | "Out of Service";
+        isCompanyStation: boolean;
+        distance?: number;
+        amenities?: string[];
+        operatingHours?: string;
+        pricePerKWh?: number;
+      } = {
+        id: selectedStation.id,
+        name: selectedStation.name,
+        address: selectedStation.address,
+        location: {
+          lat: selectedStation.latitude,
+          lng: selectedStation.longitude,
+        },
+        connectorTypes: selectedStation.connectors.map((c) => c.type),
+        powerOutput: Math.max(
+          ...selectedStation.connectors.map((c) => c.power)
+        ),
+        realtimeAvailability:
+          selectedStation.availability.availableConnectors > 0
+            ? ("Available" as const)
+            : ("Occupied" as const),
+        isCompanyStation: true,
+        distance: selectedStation.distance,
+        amenities: selectedStation.amenities,
+        operatingHours: formatOperatingHours(selectedStation.operatingHours),
+        pricePerKWh: selectedStation.pricing.basePrice * 100, // Convert to Naira
+      };
+
+      // Validate that the connector type is available at this station
+      // This is a frontend validation to help catch issues early
+      if (!stationForBackend.connectorTypes.includes(selectedConnector.type)) {
+        setSubmitError(
+          `Connector type ${selectedConnector.type} is not available at this station`
+        );
+        return;
+      }
+
       await onStartCharging({
         stationId: data.stationId,
-        connectorId: data.connectorId,
+        connectorId: data.connectorId, // Keep the connector ID for tracking
+        connectorType: selectedConnector.type, // Also send the connector type for backend validation
         batteryLevelStart: data.batteryLevelStart,
+        station: stationForBackend,
       });
       onOpenChange(false);
       reset();
@@ -210,6 +289,34 @@ export function StartChargingDialog({
       setSubmitError(errorMessage);
       console.error("Error starting charging:", error);
     }
+  };
+
+  // Helper function to format operating hours
+  const formatOperatingHours = (hours: {
+    monday: { open: string; close: string; is24Hours?: boolean };
+    tuesday: { open: string; close: string; is24Hours?: boolean };
+    wednesday: { open: string; close: string; is24Hours?: boolean };
+    thursday: { open: string; close: string; is24Hours?: boolean };
+    friday: { open: string; close: string; is24Hours?: boolean };
+    saturday: { open: string; close: string; is24Hours?: boolean };
+    sunday: { open: string; close: string; is24Hours?: boolean };
+  }): string => {
+    const allSame = Object.values(hours).every(
+      (day) => day.is24Hours || (day.open === "00:00" && day.close === "23:59")
+    );
+
+    if (allSame && hours.monday.is24Hours) {
+      return "24/7";
+    }
+
+    const weekdays = hours.monday;
+    const weekends = hours.saturday;
+
+    if (weekdays.open === weekends.open && weekdays.close === weekends.close) {
+      return `Daily: ${weekdays.open} - ${weekdays.close}`;
+    }
+
+    return `Mon-Fri: ${weekdays.open} - ${weekdays.close}, Sat-Sun: ${weekends.open} - ${weekends.close}`;
   };
 
   return (
