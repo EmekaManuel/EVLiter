@@ -2,15 +2,26 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StartChargingDialog } from "@/components/StartChargingDialog";
-import * as chargingSessionsApi from "@/services/api/modules/chargingSessions";
-import * as chargingStationsApi from "@/services/api/modules/chargingStations";
+import {
+  useChargingDashboard,
+  useChargingSessions,
+  useActiveChargingSession,
+  useStartChargingSession,
+  useEndChargingSession,
+  useCompanyChargingStations,
+} from "@/services/hooks";
 import type {
   ChargingSession,
-  UserStats,
   LocationData,
   ChargingStation,
 } from "@/types/ev";
 import { getUserLocation, getFallbackLocation } from "@/utils/getLocation";
+import { formatDuration, formatDate, formatTime } from "@/utils/formatting";
+import {
+  cleanStationName,
+  formatOperatingHours,
+  getStatusColor,
+} from "@/utils/charging";
 import {
   Battery,
   Clock,
@@ -24,16 +35,9 @@ import {
   Gauge,
   Activity,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function MyChargingPage() {
-  const [sessions, setSessions] = useState<ChargingSession[]>([]);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [currentSession, setCurrentSession] = useState<ChargingSession | null>(
-    null
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
     "recent" | "this-month" | "all-time"
   >("recent");
@@ -41,49 +45,48 @@ export default function MyChargingPage() {
   const [showStartDialog, setShowStartDialog] = useState(false);
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
 
-  const loadUserData = useCallback(async () => {
-    try {
-      setError(null);
-      setLoading(true);
+  // React Query hooks
+  const dashboardQuery = useChargingDashboard();
+  const sessionsQuery = useChargingSessions(
+    activeTab !== "all-time"
+      ? { filter: activeTab, limit: "50", offset: 0 }
+      : undefined
+  );
+  const activeSessionQuery = useActiveChargingSession();
+  const startSessionMutation = useStartChargingSession();
+  const endSessionMutation = useEndChargingSession();
+  const companyStationsQuery = useCompanyChargingStations();
 
-      // Load dashboard data (sessions, stats, active session)
-      const dashboardData = await chargingSessionsApi.getDashboard();
-
-      // Map monthlyUsage to include legacy fields for backward compatibility
-      const mappedStats = {
+  // Derived state from queries
+  const dashboardData = dashboardQuery.data;
+  const sessions =
+    activeTab !== "all-time"
+      ? sessionsQuery.data || []
+      : dashboardData?.sessions || [];
+  const userStats = dashboardData?.stats
+    ? {
         ...dashboardData.stats,
         monthlyUsage: dashboardData.stats.monthlyUsage.map((usage) => ({
           ...usage,
           energy: usage.energyUsed,
           cost: usage.totalSpent,
         })),
-      };
-
-      setUserStats(mappedStats);
-      setSessions(dashboardData.sessions);
-      setCurrentSession(dashboardData.activeSession);
-
-      // Load filtered sessions based on active tab
-      if (activeTab !== "all-time") {
-        const filteredSessions = await chargingSessionsApi.getSessions({
-          filter: activeTab,
-          limit: "50".toString(),
-        });
-        setSessions(filteredSessions);
       }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to load charging data";
-      setError(errorMessage);
-      console.error("Error loading charging data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    loadUserData();
-  }, [loadUserData]);
+    : null;
+  const currentSession =
+    activeSessionQuery.data || dashboardData?.activeSession || null;
+  const loading =
+    dashboardQuery.isLoading ||
+    sessionsQuery.isLoading ||
+    activeSessionQuery.isLoading;
+  const error =
+    dashboardQuery.error || sessionsQuery.error || activeSessionQuery.error
+      ? String(
+          dashboardQuery.error ||
+            sessionsQuery.error ||
+            activeSessionQuery.error
+        )
+      : null;
 
   // Get user location on mount
   useEffect(() => {
@@ -122,34 +125,6 @@ export default function MyChargingPage() {
     return () => clearInterval(interval);
   }, [currentSession]);
 
-  // Poll active session for updates (battery level, energy, etc.)
-  useEffect(() => {
-    if (!currentSession || currentSession.status !== "active") {
-      return;
-    }
-
-    const pollActiveSession = async () => {
-      try {
-        const activeSession = await chargingSessionsApi.getActiveSession();
-        if (activeSession) {
-          setCurrentSession(activeSession);
-        } else {
-          // Session ended
-          setCurrentSession(null);
-          loadUserData();
-        }
-      } catch (err) {
-        console.error("Error polling active session:", err);
-      }
-    };
-
-    // Poll every 30 seconds (as recommended in the documentation)
-    const interval = setInterval(pollActiveSession, 30000);
-
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.id, currentSession?.status]);
-
   const handleStartCharging = async (data: {
     stationId: string;
     connectorId: string;
@@ -171,14 +146,10 @@ export default function MyChargingPage() {
     };
   }) => {
     try {
-      setError(null);
-
       // Get station data if not provided
       let station = data.station;
-      if (!station) {
-        // Fetch station details from API
-        const stationsResponse = await chargingStationsApi.getCompanyStations();
-        const foundStation = stationsResponse.uiStations.find(
+      if (!station && companyStationsQuery.data) {
+        const foundStation = companyStationsQuery.data.uiStations.find(
           (s: ChargingStation) => s.id === data.stationId
         );
 
@@ -209,110 +180,43 @@ export default function MyChargingPage() {
         };
       }
 
-      const session = await chargingSessionsApi.startChargingSession({
+      await startSessionMutation.mutateAsync({
         stationId: data.stationId,
         connectorId: data.connectorId,
-        connectorType: data.connectorType, // Pass through connector type if provided
+        connectorType: data.connectorType,
         batteryLevelStart: data.batteryLevelStart,
-        station,
+        station: station!,
       });
 
-      setCurrentSession(session);
-      await loadUserData();
+      // Refetch data after successful start
+      dashboardQuery.refetch();
+      activeSessionQuery.refetch();
+      if (activeTab !== "all-time") {
+        sessionsQuery.refetch();
+      }
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to start charging session";
-      setError(errorMessage);
       console.error("Error starting charging session:", err);
       throw err; // Re-throw to let dialog handle it
     }
-  };
-
-  // Helper function to format operating hours
-  const formatOperatingHours = (hours: {
-    monday: { open: string; close: string; is24Hours?: boolean };
-    tuesday: { open: string; close: string; is24Hours?: boolean };
-    wednesday: { open: string; close: string; is24Hours?: boolean };
-    thursday: { open: string; close: string; is24Hours?: boolean };
-    friday: { open: string; close: string; is24Hours?: boolean };
-    saturday: { open: string; close: string; is24Hours?: boolean };
-    sunday: { open: string; close: string; is24Hours?: boolean };
-  }): string => {
-    const allSame = Object.values(hours).every(
-      (day) => day.is24Hours || (day.open === "00:00" && day.close === "23:59")
-    );
-
-    if (allSame && hours.monday.is24Hours) {
-      return "24/7";
-    }
-
-    const weekdays = hours.monday;
-    const weekends = hours.saturday;
-
-    if (weekdays.open === weekends.open && weekdays.close === weekends.close) {
-      return `Daily: ${weekdays.open} - ${weekdays.close}`;
-    }
-
-    return `Mon-Fri: ${weekdays.open} - ${weekdays.close}, Sat-Sun: ${weekends.open} - ${weekends.close}`;
   };
 
   const handleStopCharging = async () => {
     if (!currentSession) return;
 
     try {
-      setError(null);
-
-      await chargingSessionsApi.endChargingSession({
+      await endSessionMutation.mutateAsync({
         sessionId: currentSession.id,
         batteryLevelEnd: currentSession.batteryLevel,
       });
 
-      setCurrentSession(null);
-      await loadUserData();
+      // Refetch data after successful end
+      dashboardQuery.refetch();
+      activeSessionQuery.refetch();
+      if (activeTab !== "all-time") {
+        sessionsQuery.refetch();
+      }
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to stop charging session";
-      setError(errorMessage);
       console.error("Error stopping charging session:", err);
-    }
-  };
-
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  };
-
-  // Clean up station name (remove redundant "Charging Station" prefix)
-  const cleanStationName = (name: string) => {
-    return name.replace(/^Charging Station\s+/i, "").trim() || name;
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  const formatTime = (date: string) => {
-    return new Date(date).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const getStatusColor = (status: ChargingSession["status"]) => {
-    switch (status) {
-      case "active":
-        return "text-green-600";
-      case "completed":
-        return "text-gray-600";
-      case "cancelled":
-        return "text-red-600";
-      default:
-        return "text-gray-600";
     }
   };
 

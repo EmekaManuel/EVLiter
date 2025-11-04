@@ -14,17 +14,21 @@ import {
   History,
   CheckCircle,
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
-  recognizeCarByVIN,
-  recognizeCarByModel,
-  getUserRecognitions,
-  type CarRecognitionResponse,
-  type CarRecognitionHistory,
+  useRecognizeCarByVIN,
+  useRecognizeCarByModel,
+  useCarRecognitionHistory,
+} from "@/services/hooks";
+import type {
+  CarRecognitionResponse,
+  CarRecognitionHistory,
 } from "@/services/api/modules/carRecognition";
 import { useCarInfoStore } from "@/store/carInfoStore";
+import { formatDateTime } from "@/utils/formatting";
+import { CONNECTOR_TYPES_ARRAY } from "@/constants/charging";
 
 const vinSchema = z.object({
   vin: z
@@ -45,15 +49,6 @@ const modelSchema = z.object({
 
 type VinFormData = z.infer<typeof vinSchema>;
 type ModelFormData = z.infer<typeof modelSchema>;
-
-const connectorTypes: ConnectorType[] = [
-  "CCS",
-  "CHAdeMO",
-  "Tesla Supercharger",
-  "Type 2",
-  "Type 1",
-  "GB/T",
-];
 
 // Helper function to convert CarRecognitionResponse to CarInfo
 function convertToCarInfo(response: CarRecognitionResponse): CarInfo {
@@ -95,13 +90,14 @@ function convertToCarInfo(response: CarRecognitionResponse): CarInfo {
 export default function AiCarRecognitionPage() {
   const { setCarInfo: saveCarInfo } = useCarInfoStore();
   const [carInfo, setCarInfo] = useState<CarRecognitionResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [recognitionHistory, setRecognitionHistory] = useState<
-    CarRecognitionHistory[]
-  >([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  // React Query hooks
+  const recognitionHistoryQuery = useCarRecognitionHistory({
+    limit: 20,
+    offset: 0,
+  });
+  const recognizeByVINMutation = useRecognizeCarByVIN();
+  const recognizeByModelMutation = useRecognizeCarByModel();
 
   const vinForm = useForm<VinFormData>({
     resolver: zodResolver(vinSchema),
@@ -111,59 +107,37 @@ export default function AiCarRecognitionPage() {
     resolver: zodResolver(modelSchema),
   });
 
-  // Load recognition history
-  const loadRecognitionHistory = useCallback(async () => {
-    setLoadingHistory(true);
-    setHistoryError(null);
-    try {
-      const response = await getUserRecognitions({ limit: 20, offset: 0 });
-      setRecognitionHistory(response.recognitions);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to load recognition history";
-      setHistoryError(message);
-      console.error("Error loading recognition history:", err);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, []);
+  // Derived state from queries
+  const recognitionHistory = recognitionHistoryQuery.data?.recognitions || [];
+  const loadingHistory = recognitionHistoryQuery.isLoading;
+  const historyError = recognitionHistoryQuery.error
+    ? String(recognitionHistoryQuery.error)
+    : null;
 
-  // Load history on mount
-  useEffect(() => {
-    loadRecognitionHistory();
-  }, [loadRecognitionHistory]);
+  // Loading states from mutations
+  const loading =
+    recognizeByVINMutation.isPending || recognizeByModelMutation.isPending;
 
   const handleVinSubmit = async (data: VinFormData) => {
-    setLoading(true);
-    setError(null);
-
     try {
-      const result = await recognizeCarByVIN({ vin: data.vin });
+      const result = await recognizeByVINMutation.mutateAsync({
+        vin: data.vin,
+      });
       setCarInfo(result);
       // Save to Zustand store
       const carInfoData = convertToCarInfo(result);
       saveCarInfo(carInfoData);
       // Refresh history
-      await loadRecognitionHistory();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to recognize car by VIN";
-      setError(message);
+      recognitionHistoryQuery.refetch();
+    } catch {
       setCarInfo(null);
       saveCarInfo(null);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleModelSubmit = async (data: ModelFormData) => {
-    setLoading(true);
-    setError(null);
-
     try {
-      const result = await recognizeCarByModel({
+      const result = await recognizeByModelMutation.mutateAsync({
         make: data.make,
         model: data.model,
         year: data.year,
@@ -173,26 +147,11 @@ export default function AiCarRecognitionPage() {
       const carInfoData = convertToCarInfo(result);
       saveCarInfo(carInfoData);
       // Refresh history
-      await loadRecognitionHistory();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to recognize car by model";
-      setError(message);
+      recognitionHistoryQuery.refetch();
+    } catch {
       setCarInfo(null);
       saveCarInfo(null);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const formatDateTime = (date: string) => {
-    return new Date(date).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   };
 
   const handleSelectRecognition = (recognition: CarRecognitionHistory) => {
@@ -370,13 +329,6 @@ export default function AiCarRecognitionPage() {
               </TabsContent>
             </Tabs>
 
-            {error && (
-              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-600 font-medium">Error</p>
-                <p className="text-sm text-red-600 mt-1">{error}</p>
-              </div>
-            )}
-
             {carInfo && (
               <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-600 font-medium">
@@ -507,7 +459,7 @@ export default function AiCarRecognitionPage() {
                         Compatible Connectors
                       </h4>
                       <div className="flex flex-wrap gap-2">
-                        {connectorTypes.map((connector) => {
+                        {CONNECTOR_TYPES_ARRAY.map((connector) => {
                           const isCompatible =
                             carInfo.connectorTypes?.includes(connector);
                           return (
@@ -561,7 +513,7 @@ export default function AiCarRecognitionPage() {
             </div>
             <Button
               variant="outline"
-              onClick={loadRecognitionHistory}
+              onClick={() => recognitionHistoryQuery.refetch()}
               disabled={loadingHistory}
               className="text-sm"
             >

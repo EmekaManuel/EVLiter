@@ -10,16 +10,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type {
-  ChargingRecommendation,
-  LocationData,
-  RecommendationFactor,
-} from "@/types/ev";
+import type { ChargingRecommendation, LocationData } from "@/types/ev";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Battery,
   Brain,
-  CheckCircle,
   Clock,
   DollarSign,
   Info,
@@ -35,11 +29,15 @@ import { z } from "zod";
 import MapComponent from "@/components/Map";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { getUserLocation, calculateDistance } from "@/utils/getLocation";
-import { getRecommendations as getRecommendationsApi } from "@/services/api/modules/carAdvisor";
+import { useGetRecommendations } from "@/services/hooks";
 import { useCarInfoStore } from "@/store/carInfoStore";
-import type { RecommendationResult } from "@/services/api/modules/carAdvisor";
-
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+import { DISTANCE_OPTIONS } from "@/constants/charging";
+import { GOOGLE_MAPS_API_KEY } from "@/constants/config";
+import {
+  getFactorColor,
+  getFactorIcon,
+  getPriorityColor,
+} from "@/constants/ui";
 
 const preferencesSchema = z.object({
   prioritizeCost: z.boolean(),
@@ -51,34 +49,6 @@ const preferencesSchema = z.object({
 
 type PreferencesFormData = z.infer<typeof preferencesSchema>;
 
-const DISTANCE_OPTIONS = [
-  { value: "5", label: "5 miles" },
-  { value: "10", label: "10 miles" },
-  { value: "25", label: "25 miles" },
-  { value: "50", label: "50 miles" },
-  { value: "100", label: "100 miles" },
-];
-
-const FACTOR_ICONS = {
-  cost: DollarSign,
-  time: Clock,
-  distance: MapPin,
-  availability: Battery,
-  amenities: CheckCircle,
-} as const;
-
-const FACTOR_COLORS = {
-  positive: "text-green-600",
-  negative: "text-red-600",
-  neutral: "text-gray-600",
-} as const;
-
-const PRIORITY_COLORS = {
-  high: "bg-green-50 text-green-800 border-green-200",
-  medium: "bg-yellow-50 text-yellow-800 border-yellow-200",
-  low: "bg-gray-50 text-gray-800 border-gray-200",
-} as const;
-
 export default function SmartAdvisorPage() {
   const navigate = useNavigate();
   const { isLoaded } = useJsApiLoader({
@@ -88,25 +58,27 @@ export default function SmartAdvisorPage() {
 
   const carInfo = useCarInfoStore((state) => state.carInfo);
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
-  const [recommendations, setRecommendations] = useState<
-    ChargingRecommendation[]
-  >([]);
-  const [chargingStrategy, setChargingStrategy] = useState<
-    RecommendationResult["chargingStrategy"] | null
-  >(null);
-  const [carInsights, setCarInsights] = useState<
-    RecommendationResult["carInsights"] | null
-  >(null);
-  const [confidence, setConfidence] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selectedRecommendation, setSelectedRecommendation] =
     useState<ChargingRecommendation | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [directions, setDirections] =
     useState<google.maps.DirectionsResult | null>(null);
+
+  // React Query hooks
+  const getRecommendationsMutation = useGetRecommendations();
+
+  // Derived state from mutation
+  const recommendations =
+    getRecommendationsMutation.data?.recommendations || [];
+  const chargingStrategy = getRecommendationsMutation.data?.strategy || null;
+  const carInsights = getRecommendationsMutation.data?.insights || null;
+  const confidence = getRecommendationsMutation.data?.confidence || null;
+  const loading = getRecommendationsMutation.isPending;
+  const error = getRecommendationsMutation.error
+    ? String(getRecommendationsMutation.error)
+    : null;
 
   const form = useForm<PreferencesFormData>({
     resolver: zodResolver(preferencesSchema),
@@ -192,17 +164,9 @@ export default function SmartAdvisorPage() {
 
   const handleGetRecommendations = async () => {
     if (!carInfo || !userLocation) {
-      setError("Please ensure your car information and location are available");
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    // Clear previous data
-    setRecommendations([]);
-    setChargingStrategy(null);
-    setCarInsights(null);
-    setConfidence(null);
     setSelectedRecommendation(null);
 
     try {
@@ -245,42 +209,14 @@ export default function SmartAdvisorPage() {
         preferences,
       };
 
-      // Call the API
-      const result = await getRecommendationsApi(requestPayload, userLocation);
-
-      // Update state with all data from API
-      setRecommendations(result.recommendations);
-      setChargingStrategy(result.strategy);
-      setCarInsights(result.insights);
-      setConfidence(result.confidence);
+      // Call the mutation
+      await getRecommendationsMutation.mutateAsync({
+        payload: requestPayload,
+        userLocation,
+      });
     } catch (err) {
-      const errorMessage =
-        (
-          err as {
-            response?: { data?: { message?: string } };
-            message?: string;
-          }
-        )?.response?.data?.message ||
-        (err as Error)?.message ||
-        "Failed to get charging recommendations";
-      setError(errorMessage);
       console.error("Error getting recommendations:", err);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const getFactorIcon = (type: RecommendationFactor["type"]) => {
-    const IconComponent = FACTOR_ICONS[type] || Info;
-    return <IconComponent className="h-4 w-4" />;
-  };
-
-  const getFactorColor = (impact: RecommendationFactor["impact"]) => {
-    return FACTOR_COLORS[impact] || FACTOR_COLORS.neutral;
-  };
-
-  const getPriorityColor = (priority: ChargingRecommendation["priority"]) => {
-    return PRIORITY_COLORS[priority] || PRIORITY_COLORS.low;
   };
 
   const renderSelectField = (
@@ -923,7 +859,14 @@ export default function SmartAdvisorPage() {
                                 className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg"
                               >
                                 <div className={getFactorColor(factor.impact)}>
-                                  {getFactorIcon(factor.type)}
+                                  {(() => {
+                                    const IconComponent = getFactorIcon(
+                                      factor.type
+                                    );
+                                    return (
+                                      <IconComponent className="h-4 w-4" />
+                                    );
+                                  })()}
                                 </div>
                                 <div className="flex-1">
                                   <p className="text-sm font-medium capitalize text-gray-900">

@@ -14,7 +14,7 @@ import {
   signUpSchema,
   signUpSwitchFields,
 } from "@/lib/auth-forms";
-import * as authApi from "@/services/api/modules/auth";
+import { useLogin, useRegister, useForgotPassword } from "@/services/hooks";
 import { setAccessToken, setRefreshToken } from "@/utils/token";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
@@ -27,6 +27,11 @@ export default function AuthPage() {
   );
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  // React Query hooks
+  const loginMutation = useLogin();
+  const registerMutation = useRegister();
+  const forgotPasswordMutation = useForgotPassword();
 
   // Sign-in form
   const signInForm = useForm<SignInFormData>({
@@ -58,7 +63,7 @@ export default function AuthPage() {
 
   const onSubmitSignIn = async (data: SignInFormData) => {
     try {
-      const res = await authApi.login({
+      const res = await loginMutation.mutateAsync({
         email: data.email,
         password: data.password,
       });
@@ -74,7 +79,7 @@ export default function AuthPage() {
 
   const onSubmitSignUp = async (data: SignUpFormData) => {
     try {
-      const res = await authApi.register({
+      const res = await registerMutation.mutateAsync({
         email: data.email,
         password: data.password,
         name: data.name,
@@ -91,8 +96,7 @@ export default function AuthPage() {
 
   const onSubmitForgotPassword = async (data: ForgotPasswordFormData) => {
     try {
-      await authApi.forgotPassword(data.email);
-      alert("Password reset requested. Check your inbox.");
+      await forgotPasswordMutation.mutateAsync({ email: data.email });
       setAuthMode("signin");
     } catch (error) {
       console.error("Forgot password error:", error);
@@ -213,11 +217,11 @@ export default function AuthPage() {
 
   const getIsSubmitting = () => {
     if (authMode === "signin") {
-      return signInForm.formState.isSubmitting;
+      return loginMutation.isPending;
     } else if (authMode === "signup") {
-      return signUpForm.formState.isSubmitting;
+      return registerMutation.isPending;
     } else if (authMode === "forgot") {
-      return forgotPasswordForm.formState.isSubmitting;
+      return forgotPasswordMutation.isPending;
     }
     return false;
   };

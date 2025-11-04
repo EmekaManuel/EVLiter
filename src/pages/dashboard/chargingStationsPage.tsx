@@ -29,34 +29,13 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type SetStateAction } from "react";
 import { chargingStationsApi } from "@/services/api/modules/chargingStations";
-
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-
-const CONNECTOR_TYPES = [
-  { value: "all", label: "All Types" },
-  { value: "CCS", label: "CCS" },
-  { value: "CHAdeMO", label: "CHAdeMO" },
-  { value: "Tesla Supercharger", label: "Tesla Supercharger" },
-  { value: "Type 2", label: "Type 2" },
-  { value: "Type 1", label: "Type 1" },
-  { value: "GB/T", label: "GB/T" },
-];
-
-const POWER_LEVELS = [
-  { value: "0", label: "Any" },
-  { value: "50", label: "50+ kW" },
-  { value: "100", label: "100+ kW" },
-  { value: "150", label: "150+ kW" },
-  { value: "250", label: "250+ kW" },
-];
-
-const DISTANCES = [
-  { value: "5", label: "5 miles" },
-  { value: "10", label: "10 miles" },
-  { value: "25", label: "25 miles" },
-  { value: "50", label: "50 miles" },
-  { value: "100", label: "100 miles" },
-];
+import {
+  CONNECTOR_TYPES,
+  POWER_LEVELS,
+  DISTANCE_OPTIONS as DISTANCES,
+} from "@/constants/charging";
+import { GOOGLE_MAPS_API_KEY } from "@/constants/config";
+import { getStationIcon } from "@/utils/charging";
 
 export default function ChargingStationsPage() {
   const { isLoaded } = useJsApiLoader({
@@ -136,18 +115,6 @@ export default function ChargingStationsPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getStationIcon = (station: ChargingStation) => {
-    const availableConnectors = station.connectors.filter(
-      (c) => c.status === "available"
-    ).length;
-    const totalConnectors = station.connectors.length;
-
-    if (availableConnectors === 0) return "/icons/station-red.png";
-    if (availableConnectors < totalConnectors / 2)
-      return "/icons/station-yellow.png";
-    return "/icons/station-green.png";
   };
 
   const calculateDirections = (
@@ -306,7 +273,10 @@ export default function ChargingStationsPage() {
     id: station.id,
     position: { lat: station.latitude, lng: station.longitude },
     title: station.name,
-    icon: getStationIcon(station),
+    icon: getStationIcon(
+      station.connectors.filter((c) => c.status === "available").length,
+      station.connectors.length
+    ),
     onClick: () => handleStationClick(station),
   }));
 
